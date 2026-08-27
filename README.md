@@ -1,104 +1,153 @@
-![RoundedTB](https://cdn.discordapp.com/attachments/272509873479221249/891555515799318568/unknown.png)
+![RoundedTB banner](RoundedTB/res/Headbanner.png)
 
 # RoundedTB
-#### Add margins, rounded corners and segments to your taskbars!
 
-![image](https://user-images.githubusercontent.com/31840547/134795141-76349eaf-12da-40f8-b2a0-d7b7c268d152.png)
+![RoundedTB logo](PackagingProject/Images/Wide310x150Logo.scale-400.png)
 
+为 Windows 任务栏添加边距、圆角和分段。
+Add margins, rounded corners and segments to your Windows taskbar.
 
-## How do I get it?
-The easiest way to download RoundedTB is from the [Microsoft Store](https://www.microsoft.com/store/productId/9MTFTXSJ9M7F). You can also download the latest version from the Releases tab, unzip it and run `RoundedTB.exe`. If you're a madman, you can compile it yourself or check out the latest [Canary build](https://nightly.link/torchgm/RoundedTB/workflows/ci/master/rtb-artifacts.zip) (note these can be very unfinished, buggy and unstable).
+## 项目来源 / Project origin
 
-## To use
+本项目源代码来源于作者的开源项目 [RoundedTB/RoundedTB](https://github.com/RoundedTB/RoundedTB)。
+This project is based on the author's open-source [RoundedTB/RoundedTB](https://github.com/RoundedTB/RoundedTB) repository.
 
-RoundedTB is a tray-resident application. After it starts, the configuration
-window is hidden so it does not occupy the taskbar. Right-click the RoundedTB
-tray icon and choose **Show RoundedTB** to open the settings window.
+原项目发布距今已有较长时间。随着 Windows 11 任务栏架构更新，尤其是 Windows 11 23H2 及更高版本，使用动态/分栏布局时任务栏应用列表可能只显示前几个应用，无法完整显示。本仓库在原作者开源代码的基础上进行了兼容性和稳定性修复。
+The upstream project is several years old. After the Windows 11 taskbar architecture changed, especially in Windows 11 23H2 and later, dynamic or split layouts could show only a few taskbar applications instead of the complete list. This repository applies compatibility and stability fixes on top of the author's open-source code.
 
-### Language / 语言
+## 修复内容 / Fixes
 
-The first launch follows the Windows display language when it is Chinese;
-otherwise English is used. To switch at any time, open the tray menu and choose
-**Language** > **Simplified Chinese** or **English**. The choice is saved in
-`%LOCALAPPDATA%\rtb.json` and is restored on the next launch.
+- **Windows 11 23H2+ 应用列表**：通过 UI Automation 查找 `TaskbarFrame` 并聚合完整边界，解决动态模式下任务栏应用显示不完整的问题；不可用时保留旧 HWND 方式作为兼容回退。
+  **Windows 11 23H2+ app list**: finds `TaskbarFrame` through UI Automation and combines the complete bounds, fixing incomplete app display in dynamic mode; the legacy HWND path remains as a compatibility fallback.
+- **多显示器和副任务栏**：分别处理主任务栏、副任务栏以及多个 `WorkerW` 容器。
+  **Multiple monitors and secondary taskbars**: handles primary and secondary taskbars independently, including multiple `WorkerW` containers.
+- **Explorer 重启和任务栏重建**：检测窗口句柄失效，释放旧 UI Automation 对象，重新发现任务栏并自动应用当前布局。
+  **Explorer restarts and taskbar rebuilds**: detects invalid handles, releases stale UI Automation objects, rediscovers taskbars and reapplies the current layout.
+- **后台稳定性**：捕获后台异常并重试；失败时保留有效状态，发生致命失败或取消时恢复任务栏，避免长时间运行后任务栏消失。
+  **Background stability**: catches and retries transient failures; preserves the last valid state and restores the taskbar after fatal failure or cancellation, preventing the taskbar from disappearing during long-running use.
+- **线程和 UI 死锁**：取消操作不再同步阻塞 UI 线程，后台等待支持取消。
+  **Threading and UI deadlocks**: cancellation no longer synchronously blocks the UI thread, and background waits can be cancelled.
+- **GDI 资源泄漏**：正确释放动态布局使用的 `HRGN` 区域句柄，降低长时间运行时 GDI 句柄持续增长的风险。
+  **GDI resource leaks**: releases `HRGN` region handles created for dynamic layouts, reducing GDI handle growth during long sessions.
+- **TranslucentTB 通信**：使用有超时的窗口消息，避免兼容程序无响应时拖死 RoundedTB。
+  **TranslucentTB communication**: uses a timed window message so an unresponsive compatibility process cannot hang RoundedTB.
+- **配置和启动崩溃**：兼容旧版 `rtb.json`，启动时自动迁移缺失字段；修复重复启动检测，并使用临时文件替换降低配置损坏风险。
+  **Configuration and startup crashes**: migrates older `rtb.json` files with missing fields, fixes duplicate-launch detection, and writes through a temporary replacement file to reduce corruption risk.
 
-### Basic options
-The simplest way to use RoundedTB is by simply entering a margin and corner radius.
- - **Margin** - controls how many pixels to remove from each side of the taskbar, creating a margin around it that you can see and click through.
- -  **Corner Radius** - adjusts how round the corners of the taskbar should be.
+## 新增功能 / New features
 
-### Advanced options
-The advanced options allow for further customisation, at the cost of some user-friendliness.
-- **Independent Margins** - in the advanced settings, a <kbd>...</kbd> button appears on the margin box. Click it to enable independent margins, which allow you to specify the margin for each side of the taskbar. You can also use negative values to hide the rounded corners for some sides, allowing you to "attach" the taskbar to different sides of the monitor.
-- **Dynamic Mode (Windows 11)** - dynamic mode automatically resizes the taskbars to accommodate the number of icons in it, making the taskbar behave similarly to macOS' Dock.
-- **Split Mode (Windows 10)** - split mode is a simplified version of dynamic mode for Windows 10. Due to a more limited taskbar, dynamically resizing the taskbar isn't possible. However after some setup, split mode allows you to separate the taskbar from the system tray and resize it at will. I admit it's certainly not as cool as dynamic mode but for now it's better than nothing 🥺. For info on setting up, see the bottom of this readme.
-- **Show System Tray** - this toggles whether or not the system tray, clock etc. is displayed in dynamic/split mode. It can be toggled at any time by pressing <kbd>Win</kbd>+<kbd>F2</kbd>.
-- **TranslucentTB Compatibility** - due to a bug in Windows, apps that alter the composition of the taskbar don't allow RoundedTB's changes to show up automatically. Whilst I'm currently not aware of a fix, I've worked closely with [Sylveon](https://github.com/sylveon) to enable some level of compatibility between [TranslucentTB](https://github.com/TranslucentTB/TranslucentTB) and RoundedTB. This is experimental and *will* flicker slightly. It requires TranslucentTB version 2021.5 to function.
-- **About RoundedTB** - provides information about the current version of RoundedTB. The "Debug" section lets you open the config and log files.
+- **中英文界面**：支持 English 和简体中文，首次启动会根据 Windows 显示语言选择默认语言。
+  **Bilingual interface**: supports English and Simplified Chinese; the first launch follows the Windows display language.
+- **运行时切换语言**：从托盘菜单的 `Language / 语言` 子菜单即时切换，选择会保存并在下次启动恢复。
+  **Runtime language switching**: switch immediately from the tray menu's `Language / 语言` submenu; the choice is saved and restored on the next launch.
+- **长时间运行保护**：后台健康监测、失败重试、Explorer 自动恢复、可取消等待和日志轮换。
+  **Long-running protection**: background health monitoring, failure retries, automatic Explorer recovery, cancellable waits and log rotation.
+- **安全配置保存**：配置写入采用临时文件和替换策略，减少进程中断造成的配置丢失。
+  **Safer configuration saves**: writes use a temporary file and replacement strategy to reduce loss when the process is interrupted.
 
-### Windows 11 23H2 and later
+## 获取 / Download
 
-Windows 11 moved the taskbar app list into a XAML surface. RoundedTB now reads
-the complete `TaskbarFrame` bounds, so dynamic/split layouts include all pinned
-and running applications instead of only the first few buttons. Primary and
-secondary taskbars are handled independently. If Explorer is restarted or
-rebuilds a taskbar, RoundedTB releases the old automation objects, rediscovers
-the handles and reapplies the current layout automatically.
+最简单的方式是从 [Microsoft Store](https://www.microsoft.com/store/productId/9MTFTXSJ9M7F) 安装。也可以从本项目的 [Releases](https://github.com/Surise/RoundedTB/releases) 下载压缩包，解压后运行 `RoundedTB.exe`；最新的实验版本可从 [Canary build](https://nightly.link/torchgm/RoundedTB/workflows/ci/master/rtb-artifacts.zip) 获取。
+The easiest option is the [Microsoft Store](https://www.microsoft.com/store/productId/9MTFTXSJ9M7F). You can also download a release archive from this project's [Releases](https://github.com/Surise/RoundedTB/releases), extract it and run `RoundedTB.exe`; experimental builds are available from the [Canary build](https://nightly.link/torchgm/RoundedTB/workflows/ci/master/rtb-artifacts.zip).
 
-### Long-running use
+本仓库中的图片使用相对路径引用，例如 `RoundedTB/res/Headbanner.png`，因此在离线环境或 GitHub 镜像中也可以正常显示。
+Images in this repository use relative paths such as `RoundedTB/res/Headbanner.png`, so they also render in offline checkouts and GitHub mirrors.
 
-The background monitor retries transient Explorer/UI Automation failures,
-restores the taskbar if an update fails, and uses bounded waits for optional
-TranslucentTB refresh messages. Region handles created for dynamic layouts are
-released after every update, so the process can remain in the tray for long
-periods without accumulating GDI resources.
+## 使用 / Usage
 
+RoundedTB 常驻系统托盘。启动后配置窗口默认隐藏，不会占用任务栏；右键托盘图标并选择 **Show RoundedTB / 显示 RoundedTB** 打开设置。
+RoundedTB runs in the system tray. The configuration window is hidden after startup so it does not occupy the taskbar; right-click the tray icon and choose **Show RoundedTB** to open settings.
 
+### 语言 / Language
 
+首次启动时，如果 Windows 显示语言为中文，程序默认使用简体中文，否则使用英文。可以随时从托盘菜单选择 **Language / 语言** > **Simplified Chinese / 简体中文** 或 **English / 英文**。
+On first launch, Simplified Chinese is selected when the Windows display language is Chinese; otherwise English is used. At any time choose **Language** > **Simplified Chinese** or **English** from the tray menu.
 
+### 基本选项 / Basic options
 
+- **Margin / 边距**：从任务栏每一侧移除指定像素，形成可见且可点击穿透的边距。
+  Removes the specified number of pixels from each side of the taskbar, creating a visible margin that clicks can pass through.
+- **Corner Radius / 圆角半径**：调整任务栏圆角大小。
+  Adjusts how round the taskbar corners are.
 
+### 高级选项 / Advanced options
 
-## Known issues
- - Auto-hiding is still incredibly experimental and may lead to a lot of flickering, especially with TranslucentTB compatibility or dynamic/split mode enabled. ([#36](https://github.com/torchgm/RoundedTB/issues/36))
- - Rounded corners are not antialiased due to a Windows limitation. ([#4](https://github.com/torchgm/RoundedTB/issues/4))
- - Dynamic mode won't hide the left side of the taskbar if the taskbar alignment has never been changed. This can be worked around by changing the alignment to Left and back to Center. ([#98](https://github.com/torchgm/RoundedTB/issues/98)) 
- - Dynamic mode/split mode only work correctly when the taskbar is horizontal at the top/bottom of the screen.
- - Split mode on Windows 10 only supports the main taskbar, secondary taskbars will not be split.
- - When using dynamic mode, the taskbar may occasionally become too large, too small or not update. This can usually be fixed by moving a window to or from that monitor or briefly changing the taskbar alignment. These issues will be reduced in upcoming updates, don't worry! I just need to refactor a lot of code first.
- - Compatibility with taskbar mods outside of TranslucentTB version 2021.5 is not currently guaranteed.
+- **Independent Margins / 独立边距**：点击边距输入框旁的 `...`，分别设置上、下、左、右边距；也可以使用负值将任务栏贴到显示器边缘。
+  Click the `...` button beside the margin box to set top, bottom, left and right margins independently; negative values can attach the taskbar to a screen edge.
+- **Dynamic Mode (Windows 11) / 动态模式（Windows 11）**：根据应用图标数量自动调整任务栏宽度，类似 macOS Dock。
+  Automatically resizes the taskbar to match the number of app icons, similar to the macOS Dock.
+- **Split Mode (Windows 10) / 分栏模式（Windows 10）**：将应用区与系统托盘分开并允许手动调整大小。Windows 10 需要先完成下方的设置。
+  Separates the app area from the system tray and lets you resize it manually. Windows 10 requires the setup described below.
+- **Show System Tray / 显示系统托盘**：控制动态/分栏模式是否显示系统托盘和时钟，也可以按 `Win`+`F2` 切换。
+  Controls whether the system tray and clock are shown in dynamic/split mode; press `Win`+`F2` to toggle it.
+- **TranslucentTB Compatibility / TranslucentTB 兼容性**：为 TranslucentTB 提供实验性刷新兼容。需要 TranslucentTB 2021.5，切换时可能出现轻微闪烁。
+  Provides experimental refresh compatibility with TranslucentTB. It requires TranslucentTB 2021.5 and may flicker slightly while switching.
+- **About RoundedTB / 关于 RoundedTB**：查看版本、配置文件和日志文件。
+  Shows version information and provides access to the configuration and log files.
 
-## Other info
-RoundedTB makes no permanent changes (though it will run on startup if you
-enable it from the tray icon). If Explorer is manually restarted, leave
-RoundedTB running; it will wait for the new taskbar handles and restore the
-layout. If anything breaks catastrophically, press
-<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Esc</kbd> to open Task Manager, end RoundedTB
-and restart Explorer. At worst, reboot the PC.
+### Windows 11 23H2 及更高版本 / Windows 11 23H2 and later
 
-Feel free to let me know about any bugs by filing an issue so I can look into it. Alternatively if you want to discuss RoundedTB, get some insider sneak-peeks, need some assistance or just want to see what I'm up to, then feel free to join the [Discord server](https://discord.gg/wYQJd8VGSB).
+Windows 11 将任务栏应用列表移到了 XAML 界面。动态模式现在读取完整的 `TaskbarFrame` 边界，因此所有固定和正在运行的应用都能参与布局，而不只是前几个按钮。主任务栏和副任务栏分别处理；Explorer 重启后程序会自动等待新句柄并恢复布局。
+Windows 11 moved the taskbar app list into a XAML surface. Dynamic mode now reads the complete `TaskbarFrame` bounds, so all pinned and running apps participate in the layout instead of only the first few buttons. Primary and secondary taskbars are handled independently, and the layout is restored after Explorer restarts.
 
-### Configuring split mode on Windows 10
-Split mode has a couple of limitations and requires a small amount of setup to get working properly.
-#### Limitations
-- Split mode doesn't resize itself automatically. This feature will be coming to RoundedTB for Windows 10 in the future.
-- Toolbars are not compatible with split mode currently, and will need to be disabled apart from one. This is because toolbars are used to mark the "empty" space on the taskbar.
-- Split mode only works when the taskbar is horizontal at the top or bottom of the screen, and on the primary monitor.
-#### Setup
-1. Right-click the taskbar and disable "Lock the taskbar".
-2. Right-click it again and turn off any existing toolbars.
-3. Right-click a third time, select Toolbars > Desktop.
-4. Use the small <kbd>||</kbd> handle to resize the taskbar as you please.
+### 长时间运行 / Long-running use
 
-Watch the following video for a guide on setting up split mode:
+后台监控会在 UI Automation 或 Explorer 暂时不可用时重试，并在更新失败时保留有效状态；只有发生不可恢复错误时才执行完整恢复。动态区域句柄会在每次更新后释放，日志也会限制大小并轮换，适合长时间驻留托盘。
+The background monitor retries temporary UI Automation or Explorer failures and keeps the last valid state when an update fails; a full reset is reserved for unrecoverable errors. Dynamic region handles are released after each update, and logs are size-limited and rotated for long tray sessions.
 
-https://user-images.githubusercontent.com/31840547/134795022-1312d011-40f2-4641-8c8d-3d6c0e752747.mp4
+## 已知问题 / Known issues
 
-## Build and publish
+- 自动隐藏仍处于实验阶段，配合 TranslucentTB 或动态/分栏模式时可能闪烁（[upstream #36](https://github.com/torchgm/RoundedTB/issues/36)）。
+  Auto-hide is still experimental and may flicker with TranslucentTB or dynamic/split mode ([upstream #36](https://github.com/torchgm/RoundedTB/issues/36)).
+- Windows 限制导致圆角无法抗锯齿（[upstream #4](https://github.com/torchgm/RoundedTB/issues/4)）。
+  Rounded corners are not antialiased because of a Windows limitation ([upstream #4](https://github.com/torchgm/RoundedTB/issues/4)).
+- 如果从未更改过任务栏对齐方式，动态模式可能无法隐藏左侧；先切换到左对齐再切回居中可以绕过此问题（[upstream #98](https://github.com/torchgm/RoundedTB/issues/98)）。
+  Dynamic mode may not hide the left side if taskbar alignment has never changed; switch to Left and back to Center as a workaround ([upstream #98](https://github.com/torchgm/RoundedTB/issues/98)).
+- 动态模式和分栏模式最适合显示器顶部或底部的水平任务栏。
+  Dynamic and split mode work best with a horizontal taskbar at the top or bottom of a display.
+- Windows 10 分栏模式只支持主任务栏，副任务栏不会分栏。
+  Windows 10 split mode supports only the primary taskbar; secondary taskbars are not split.
+- 偶尔需要移动窗口或短暂切换任务栏对齐方式，才能让动态尺寸重新计算。
+  Occasionally moving a window or briefly changing taskbar alignment may be needed to recalculate the dynamic size.
+- 除 TranslucentTB 2021.5 外的任务栏修改工具不保证兼容。
+  Compatibility with taskbar modification tools other than TranslucentTB 2021.5 is not guaranteed.
 
-The project targets `.NET 6 for Windows` and uses a COM reference for Windows
-UI Automation. Use Visual Studio 2022 MSBuild (the `dotnet build` command does
-not resolve this COM reference on all SDK versions):
+## 其他信息 / Other information
+
+RoundedTB 不会永久修改系统；启用托盘菜单中的开机启动后，它只会随 Windows 启动。如果 Explorer 被手动重启，请保持 RoundedTB 运行，程序会等待新的任务栏句柄并恢复布局。若任务栏出现严重异常，可按 `Ctrl`+`Shift`+`Esc` 打开任务管理器，结束 RoundedTB 后重启 Explorer。
+RoundedTB makes no permanent system changes. If startup is enabled from the tray menu, it only runs when Windows starts. If Explorer is restarted manually, leave RoundedTB running so it can wait for new taskbar handles and restore the layout. If the taskbar becomes unusable, press `Ctrl`+`Shift`+`Esc`, end RoundedTB in Task Manager and restart Explorer.
+
+## Windows 10 分栏模式设置 / Configuring split mode on Windows 10
+
+### 限制 / Limitations
+
+- 分栏模式不会自动调整大小。
+  Split mode does not resize itself automatically.
+- 工具栏与分栏模式不完全兼容，除用于标记空白区域的工具栏外应关闭其他工具栏。
+  Toolbars are not fully compatible; disable all except the one used to mark the empty area.
+- 分栏模式只适用于主显示器顶部或底部的水平任务栏。
+  Split mode works only with a horizontal taskbar at the top or bottom of the primary monitor.
+
+### 设置步骤 / Setup
+
+1. 右键任务栏，关闭“锁定任务栏”。
+   Right-click the taskbar and disable **Lock the taskbar**.
+2. 再次右键任务栏，关闭现有工具栏。
+   Right-click it again and turn off existing toolbars.
+3. 第三次右键任务栏，选择“工具栏” > “桌面”。
+   Right-click it a third time and select **Toolbars** > **Desktop**.
+4. 使用出现的 `||` 小手柄调整任务栏大小。
+   Use the small `||` handle to resize the taskbar.
+
+原项目的设置视频仍可通过以下链接访问：
+The upstream setup video is available at:
+
+[Windows 10 split mode setup video](https://user-images.githubusercontent.com/31840547/134795022-1312d011-40f2-4641-8c8d-3d6c0e752747.mp4)
+
+## 构建和发布 / Build and publish
+
+项目目标框架为 `.NET 6 for Windows`，并使用 Windows UI Automation COM 引用。建议使用 Visual Studio 2022 MSBuild；部分 SDK 版本下 `dotnet build` 无法解析该 COM 引用。
+The project targets `.NET 6 for Windows` and uses a Windows UI Automation COM reference. Visual Studio 2022 MSBuild is recommended because `dotnet build` does not resolve this COM reference on every SDK version.
 
 ```powershell
 & "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe" `
@@ -107,8 +156,24 @@ not resolve this COM reference on all SDK versions):
   /p:EnableCompressionInSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
 ```
 
-The self-contained executable is written below
-`RoundedTB\bin\Release\net6.0-windows10.0.19041\win-x64\publish`. Windows 10
-and Windows 11 are supported; dynamic mode uses the Windows 11 taskbar
-surface, while Windows 10 uses split mode and its existing toolbar setup.
+发布结果为自包含的 Windows x64 程序：
+The publish output is a self-contained Windows x64 application:
+
+- EXE：`publish/RoundedTB-win-x64/RoundedTB.exe`
+  Executable: `publish/RoundedTB-win-x64/RoundedTB.exe`
+- ZIP：`publish/RoundedTB-win-x64.zip`
+  Archive: `publish/RoundedTB-win-x64.zip`
+
+解压 ZIP 后运行 `RoundedTB.exe` 即可。Windows 10 和 Windows 11 均受支持；Windows 11 使用动态模式任务栏界面，Windows 10 使用分栏模式及现有工具栏设置。
+Extract the ZIP and run `RoundedTB.exe`. Windows 10 and Windows 11 are supported; Windows 11 uses the dynamic taskbar surface, while Windows 10 uses split mode and its existing toolbar setup.
+
+## 许可证 / License
+
+本项目及修改内容遵循 [GNU GPL v3](LICENSE)。请保留原项目版权和来源声明，并在分发修改版本时注明修改内容。
+This project and its modifications are distributed under the [GNU GPL v3](LICENSE). Preserve the upstream copyright and attribution notices, and identify changes when distributing a modified version.
+
+## 反馈 / Feedback
+
+欢迎通过 Issue 报告问题或提交改进建议。原项目的讨论也可以在其 [Discord server](https://discord.gg/wYQJd8VGSB) 中进行。
+Bug reports and improvement suggestions are welcome through Issues. Upstream discussions are also available in the [Discord server](https://discord.gg/wYQJd8VGSB).
 
