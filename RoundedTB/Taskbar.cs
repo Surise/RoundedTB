@@ -116,14 +116,27 @@ namespace RoundedTB
         /// <returns>
         /// a partial Taskbar containing just rects and handles.
         /// </returns>
-        public static Types.Taskbar GetQuickTaskbarRects(IntPtr taskbarHwnd, IntPtr trayHwnd, IntPtr appListHwnd)
+        public static Types.Taskbar GetQuickTaskbarRects(
+            IntPtr taskbarHwnd,
+            IntPtr trayHwnd,
+            IntPtr appListHwnd,
+            Types.AppListXaml appListXaml = null)
         {
             LocalPInvoke.GetWindowRect(taskbarHwnd, out LocalPInvoke.RECT taskbarRectCheck);
             LocalPInvoke.GetWindowRect(trayHwnd, out LocalPInvoke.RECT trayRectCheck);
             LocalPInvoke.GetWindowRect(appListHwnd, out LocalPInvoke.RECT appListRectCheck);
 
+            // Windows 11 23H2 moved the app list into XAML. The legacy HWND still exists,
+            // but its rectangle only covers a subset of the taskbar buttons.
+            LocalPInvoke.RECT? xamlRect = appListXaml?.GetWindowRect();
+            if (xamlRect.HasValue)
+            {
+                appListRectCheck = xamlRect.Value;
+            }
+
             return new Types.Taskbar()
             {
+                AppListXaml = appListXaml,
                 TaskbarHwnd = taskbarHwnd,
                 TrayHwnd = trayHwnd,
                 AppListHwnd = appListHwnd,
@@ -421,6 +434,34 @@ namespace RoundedTB
         }
 
         /// <summary>
+        /// Finds the XAML taskbar frame used by Windows 11 23H2 and later.
+        /// </summary>
+        public static Types.AppListXaml GetAppListSince23H2(IntPtr taskbarHwnd)
+        {
+            if (taskbarHwnd == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            try
+            {
+                Types.AppListXaml appList = new Types.AppListXaml(taskbarHwnd);
+                if (appList.IsAvailable)
+                {
+                    return appList;
+                }
+
+                appList.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Unable to find the XAML taskbar frame: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Collects information on any currently-present taskbars.
         /// </summary>
         /// <returns>
@@ -437,9 +478,16 @@ namespace RoundedTB
             LocalPInvoke.GetWindowRect(hwndTray, out LocalPInvoke.RECT rectTray); // Get the RECT for the main taskbar's tray
             IntPtr hwndAppList = LocalPInvoke.FindWindowExA(LocalPInvoke.FindWindowExA(hwndMain, IntPtr.Zero, "ReBarWindow32", null), IntPtr.Zero, "MSTaskSwWClass", null); // Get the handle to the main taskbar's app list
             LocalPInvoke.GetWindowRect(hwndAppList, out LocalPInvoke.RECT rectAppList);// Get the RECT for the main taskbar's app list
+            Types.AppListXaml appListXaml = GetAppListSince23H2(hwndMain);
+            LocalPInvoke.RECT? xamlRect = appListXaml?.GetWindowRect();
+            if (xamlRect.HasValue)
+            {
+                rectAppList = xamlRect.Value;
+            }
 
             retVal.Add(new Types.Taskbar
             {
+                AppListXaml = appListXaml,
                 TaskbarHwnd = hwndMain,
                 TrayHwnd = hwndTray,
                 AppListHwnd = hwndAppList,
@@ -487,11 +535,30 @@ namespace RoundedTB
                     {
                         hwndSecTray = LocalPInvoke.FindWindowExA(hwndCurrent, IntPtr.Zero, "TrayNotifyWnd", null); // Get handle to this secondary taskbar's tray
                     }
-                    LocalPInvoke.GetWindowRect(hwndTray, out LocalPInvoke.RECT rectSecTray); // Get the RECT for this secondary taskbar's tray
-                    IntPtr hwndSecAppList = LocalPInvoke.FindWindowExA(LocalPInvoke.FindWindowExA(hwndCurrent, IntPtr.Zero, "WorkerW", null), IntPtr.Zero, "MSTaskListWClass", null); // Get the handle to the main taskbar's app list
+                    LocalPInvoke.GetWindowRect(hwndSecTray, out LocalPInvoke.RECT rectSecTray); // Get the RECT for this secondary taskbar's tray
+                    IntPtr hwndWorkerW = LocalPInvoke.FindWindowExA(hwndCurrent, IntPtr.Zero, "WorkerW", null);
+                    IntPtr hwndSecAppList = IntPtr.Zero;
+                    // Windows 11 22H2 can expose more than one WorkerW container.
+                    while (hwndWorkerW != IntPtr.Zero)
+                    {
+                        hwndSecAppList = LocalPInvoke.FindWindowExA(hwndWorkerW, IntPtr.Zero, "MSTaskListWClass", null);
+                        if (hwndSecAppList != IntPtr.Zero)
+                        {
+                            break;
+                        }
+
+                        hwndWorkerW = LocalPInvoke.FindWindowExA(hwndCurrent, hwndWorkerW, "WorkerW", null);
+                    }
                     LocalPInvoke.GetWindowRect(hwndSecAppList, out LocalPInvoke.RECT rectSecAppList);// Get the RECT for this secondary taskbar's app list
+                    Types.AppListXaml appListSec = GetAppListSince23H2(hwndCurrent);
+                    LocalPInvoke.RECT? xamlSecRect = appListSec?.GetWindowRect();
+                    if (xamlSecRect.HasValue)
+                    {
+                        rectSecAppList = xamlSecRect.Value;
+                    }
                     retVal.Add(new Types.Taskbar
                     {
+                        AppListXaml = appListSec,
                         TaskbarHwnd = hwndCurrent,
                         TrayHwnd = hwndSecTray,
                         AppListHwnd = hwndSecAppList,

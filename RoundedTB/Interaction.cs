@@ -29,9 +29,107 @@ namespace RoundedTB
 
         public Types.Settings ReadJSON()
         {
-            string jsonSettings = File.ReadAllText(mw.configPath);
-            Types.Settings settings = JsonConvert.DeserializeObject<Types.Settings>(jsonSettings);
+            if (mw == null)
+            {
+                return null;
+            }
+
+            string jsonSettings;
+            try
+            {
+                jsonSettings = File.ReadAllText(mw.configPath);
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(jsonSettings))
+            {
+                return null;
+            }
+
+            Types.Settings settings;
+            try
+            {
+                settings = JsonConvert.DeserializeObject<Types.Settings>(jsonSettings);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+
+            if (settings == null)
+            {
+                return null;
+            }
+
+            int defaultRadius = mw.isWindows11 ? 7 : 16;
+            int defaultMargin = mw.isWindows11 ? 3 : 2;
+            Types.SegmentSettings fallback = CreateSegment(defaultRadius, defaultMargin);
+
+            // Versions before the segmented layout schema stored one shared set of values.
+            try
+            {
+                Newtonsoft.Json.Linq.JObject legacy = Newtonsoft.Json.Linq.JObject.Parse(jsonSettings);
+                int? legacyRadius = legacy.Value<int?>("CornerRadius");
+                int? legacyBasicMargin = legacy.Value<int?>("MarginBasic");
+                bool hasLegacyMargins = legacyBasicMargin.HasValue ||
+                    legacy["MarginTop"] != null || legacy["MarginLeft"] != null ||
+                    legacy["MarginBottom"] != null || legacy["MarginRight"] != null;
+
+                if (legacyRadius.HasValue || hasLegacyMargins)
+                {
+                    bool advancedMargins = legacyBasicMargin == -384 ||
+                        (!legacyBasicMargin.HasValue && legacy["MarginTop"] != null);
+                    int margin = legacyBasicMargin ?? defaultMargin;
+                    fallback = advancedMargins
+                        ? CreateSegment(
+                            legacyRadius ?? defaultRadius,
+                            legacy.Value<int?>("MarginTop") ?? 0,
+                            legacy.Value<int?>("MarginLeft") ?? 0,
+                            legacy.Value<int?>("MarginBottom") ?? 0,
+                            legacy.Value<int?>("MarginRight") ?? 0)
+                        : CreateSegment(legacyRadius ?? defaultRadius, margin);
+                }
+            }
+            catch (JsonException)
+            {
+                // The typed deserialization above succeeded; retain the default fallback.
+            }
+
+            settings.SimpleTaskbarLayout ??= CloneSegment(fallback);
+            settings.DynamicAppListLayout ??= CloneSegment(settings.SimpleTaskbarLayout);
+            settings.DynamicTrayLayout ??= CloneSegment(settings.DynamicAppListLayout);
+            settings.DynamicWidgetsLayout ??= CloneSegment(settings.DynamicTrayLayout);
             return settings;
+        }
+
+        private static Types.SegmentSettings CreateSegment(int radius, int margin)
+        {
+            return CreateSegment(radius, margin, margin, margin, margin);
+        }
+
+        private static Types.SegmentSettings CreateSegment(int radius, int top, int left, int bottom, int right)
+        {
+            return new Types.SegmentSettings
+            {
+                CornerRadius = radius,
+                MarginTop = top,
+                MarginLeft = left,
+                MarginBottom = bottom,
+                MarginRight = right
+            };
+        }
+
+        private static Types.SegmentSettings CloneSegment(Types.SegmentSettings source)
+        {
+            return CreateSegment(
+                source.CornerRadius,
+                source.MarginTop,
+                source.MarginLeft,
+                source.MarginBottom,
+                source.MarginRight);
         }
 
         public bool IsWindows11()

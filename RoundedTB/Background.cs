@@ -99,20 +99,27 @@ namespace RoundedTB
                         if (Taskbar.TaskbarCountOrHandleChanged(taskbars.Count, taskbars[0].TaskbarHwnd))
                         {
                             // Forcefully reset taskbars if the taskbar count or main taskbar handle has changed
+                            taskbars.ForEach(taskbar => taskbar.Dispose());
                             taskbars = Taskbar.GenerateTaskbarInfo();
                             Debug.WriteLine("Regenerating taskbar info");
                         }
 
                         for (int current = 0; current < taskbars.Count; current++)
                         {
-                            if (taskbars[current].TaskbarHwnd == IntPtr.Zero || taskbars[current].AppListHwnd == IntPtr.Zero)
+                            if (taskbars[current].TaskbarHwnd == IntPtr.Zero ||
+                                (taskbars[current].AppListHwnd == IntPtr.Zero && taskbars[current].AppListXaml == null))
                             {
+                                taskbars.ForEach(taskbar => taskbar.Dispose());
                                 taskbars = Taskbar.GenerateTaskbarInfo();
                                 Debug.WriteLine("Regenerating taskbar info due to a missing handle");
                                 break;
                             }
                             // Get the latest quick details of this taskbar
-                            Types.Taskbar newTaskbar = Taskbar.GetQuickTaskbarRects(taskbars[current].TaskbarHwnd, taskbars[current].TrayHwnd, taskbars[current].AppListHwnd);
+                            Types.Taskbar newTaskbar = Taskbar.GetQuickTaskbarRects(
+                                taskbars[current].TaskbarHwnd,
+                                taskbars[current].TrayHwnd,
+                                taskbars[current].AppListHwnd,
+                                taskbars[current].AppListXaml);
 
 
                             // If the taskbar's monitor has a maximised window, reset it so it's "filled"

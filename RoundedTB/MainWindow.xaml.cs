@@ -68,8 +68,8 @@ namespace RoundedTB
 
             // Check OS build, as behaviours rather-annoyingly differ between Windows 11 and Windows 10
             RegistryKey registryKey = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
-            var buildNumber = registryKey.GetValue("CurrentBuild").ToString();
-            if (Convert.ToInt32(buildNumber) >= 21996)
+            var buildNumber = registryKey?.GetValue("CurrentBuild")?.ToString();
+            if (!int.TryParse(buildNumber, out int build) || build >= 21996)
             {
                 isWindows11 = true;
             }
@@ -143,14 +143,6 @@ namespace RoundedTB
             }
             activeSettings = interaction.ReadJSON();
 
-            if (isWindows11)
-            {
-                activeSettings.IsWindows11 = true;
-            }
-            else
-            {
-                activeSettings.IsWindows11 = false;
-            }
             // Default settings
             if (activeSettings == null)
             {
@@ -197,6 +189,15 @@ namespace RoundedTB
                         AutoHide = 0
                     };
                 }
+            }
+
+            if (isWindows11)
+            {
+                activeSettings.IsWindows11 = true;
+            }
+            else
+            {
+                activeSettings.IsWindows11 = false;
             }
 
             if (version != activeSettings.Version && version != -1)
