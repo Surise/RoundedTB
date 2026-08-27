@@ -22,6 +22,8 @@ namespace RoundedTB
         public Infobox()
         {
             InitializeComponent();
+            Title = Localization.Text("Infobox", "信息");
+            okButton.Content = Localization.Text("OK", "确定");
         }
 
         private void okButton_Click(object sender, RoutedEventArgs e)

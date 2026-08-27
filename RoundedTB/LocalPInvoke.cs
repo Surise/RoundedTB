@@ -25,6 +25,16 @@ namespace RoundedTB
         [DllImport("user32.dll", CharSet = CharSet.Auto)]
         public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, int wParam, IntPtr lParam);
 
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr SendMessageTimeout(
+            IntPtr hWnd,
+            int msg,
+            IntPtr wParam,
+            IntPtr lParam,
+            uint flags,
+            uint timeout,
+            out IntPtr result);
+
         [DllImport("user32.dll")]
         public static extern bool PtInRect(ref RECT lprc, POINT pt);
 
@@ -33,7 +43,7 @@ namespace RoundedTB
         public static extern bool IsWindow(IntPtr hWnd);
 
         [DllImport("user32.dll")]
-        public static extern int GetWindowRgn(IntPtr hWnd, out IntPtr hRgn);
+        public static extern int GetWindowRgn(IntPtr hWnd, IntPtr hRgn);
 
         [DllImport("user32.dll")]
         public static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
@@ -65,6 +75,12 @@ namespace RoundedTB
 
         [DllImport("gdi32.dll")]
         public static extern int CombineRgn(IntPtr hrgnDest, IntPtr hrgnSrc1, IntPtr hrgnSrc2, int fnCombineMode);
+
+        [DllImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool DeleteObject(IntPtr hObject);
+
+        public const uint SMTO_ABORTIFHUNG = 0x0002;
 
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         public static extern int RegisterWindowMessage(string lpString);

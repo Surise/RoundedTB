@@ -151,20 +151,24 @@ namespace RoundedTB
         /// </summary>
         public static void ResetTaskbar(Types.Taskbar taskbar, Types.Settings settings)
         {
+            if (taskbar == null || taskbar.TaskbarHwnd == IntPtr.Zero || !LocalPInvoke.IsWindow(taskbar.TaskbarHwnd))
+            {
+                return;
+            }
             LocalPInvoke.SetWindowRgn(taskbar.TaskbarHwnd, IntPtr.Zero, true);
             LocalPInvoke.SetLayeredWindowAttributes(taskbar.TaskbarHwnd, 0, 255, LocalPInvoke.LWA_ALPHA);
             int style = LocalPInvoke.GetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE).ToInt32();
             if ((style & LocalPInvoke.WS_EX_LAYERED) == LocalPInvoke.WS_EX_LAYERED)
             {
-                LocalPInvoke.SetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE, LocalPInvoke.GetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE).ToInt32() ^ LocalPInvoke.WS_EX_LAYERED);
+                LocalPInvoke.SetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE, style & ~LocalPInvoke.WS_EX_LAYERED);
             }
             style = LocalPInvoke.GetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE).ToInt32();
             if ((style & LocalPInvoke.WS_EX_TRANSPARENT) == LocalPInvoke.WS_EX_TRANSPARENT)
             {
-                LocalPInvoke.SetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE, LocalPInvoke.GetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE).ToInt32() ^ LocalPInvoke.WS_EX_TRANSPARENT);
+                LocalPInvoke.SetWindowLong(taskbar.TaskbarHwnd, LocalPInvoke.GWL_EXSTYLE, style & ~LocalPInvoke.WS_EX_TRANSPARENT);
             }
 
-            if (settings.CompositionCompat)
+            if (settings?.CompositionCompat == true)
             {
                 Interaction.UpdateTranslucentTB(taskbar.TaskbarHwnd);
             }
@@ -178,6 +182,12 @@ namespace RoundedTB
         /// </returns>
         public static bool UpdateSimpleTaskbar(Types.Taskbar taskbar, Types.Settings settings)
         {
+            if (!CanUpdate(taskbar, settings))
+            {
+                return false;
+            }
+
+            IntPtr region = IntPtr.Zero;
             try
             {
                 // Create an effective region to be applied to the taskbar
@@ -190,17 +200,34 @@ namespace RoundedTB
                     Height = Convert.ToInt32(taskbar.TaskbarRect.Bottom - taskbar.TaskbarRect.Top - (settings.SimpleTaskbarLayout.MarginBottom * taskbar.ScaleFactor)) + 1
                 };
 
-                IntPtr region = LocalPInvoke.CreateRoundRectRgn(taskbarEffectiveRegion.Left, taskbarEffectiveRegion.Top, taskbarEffectiveRegion.Width, taskbarEffectiveRegion.Height, taskbarEffectiveRegion.CornerRadius, taskbarEffectiveRegion.CornerRadius);
-                LocalPInvoke.SetWindowRgn(taskbar.TaskbarHwnd, region, true);
+                if (taskbarEffectiveRegion.Width <= 0 || taskbarEffectiveRegion.Height <= 0)
+                {
+                    return false;
+                }
+                region = LocalPInvoke.CreateRoundRectRgn(taskbarEffectiveRegion.Left, taskbarEffectiveRegion.Top, taskbarEffectiveRegion.Width, taskbarEffectiveRegion.Height, taskbarEffectiveRegion.CornerRadius, taskbarEffectiveRegion.CornerRadius);
+                if (region == IntPtr.Zero || LocalPInvoke.SetWindowRgn(taskbar.TaskbarHwnd, region, true) == 0)
+                {
+                    return false;
+                }
+                // SetWindowRgn transfers ownership to USER32 on success.
+                region = IntPtr.Zero;
                 if (settings.CompositionCompat)
                 {
                     Interaction.UpdateTranslucentTB(taskbar.TaskbarHwnd);
                 }
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Unable to update simple taskbar: {ex.Message}");
                 return false;
+            }
+            finally
+            {
+                if (region != IntPtr.Zero)
+                {
+                    LocalPInvoke.DeleteObject(region);
+                }
             }
         }
 
@@ -212,10 +239,14 @@ namespace RoundedTB
         /// </returns>
         public static bool UpdateDynamicTaskbar(Types.Taskbar taskbar, Types.Settings settings)
         {
+            if (!CanUpdate(taskbar, settings))
+            {
+                return false;
+            }
+
+            IntPtr mainRegion = IntPtr.Zero;
             try
             {
-                IntPtr mainRegion;
-                IntPtr workingRegion = LocalPInvoke.CreateRoundRectRgn(1, 1, 1, 1, 0, 0);
                 int centredDistanceFromEdge = 0;
 
                 // Create an effective region to be applied to the taskbar for the applist
@@ -266,12 +297,18 @@ namespace RoundedTB
                 }
 
                 // Create region for if the taskbar is centred by take the right-to-right distance (centredDistanceFromEdge) off from both sides, as well as the margin
+                int mainWidth;
                 if (settings.IsCentred)
                 {
+                    mainWidth = centredEffectiveRegion.Width - centredDistanceFromEdge;
+                    if (mainWidth <= 0 || centredEffectiveRegion.Height <= 0)
+                    {
+                        return false;
+                    }
                     mainRegion = LocalPInvoke.CreateRoundRectRgn(
                         centredDistanceFromEdge + centredEffectiveRegion.Left,
                         centredEffectiveRegion.Top,
-                        centredEffectiveRegion.Width - centredDistanceFromEdge,
+                        mainWidth,
                         centredEffectiveRegion.Height,
                         centredEffectiveRegion.CornerRadius,
                         centredEffectiveRegion.CornerRadius
@@ -282,18 +319,30 @@ namespace RoundedTB
                 else
                 {
 
+                    mainWidth = taskbarEffectiveRegion.Width - centredDistanceFromEdge;
+                    if (mainWidth <= 0 || taskbarEffectiveRegion.Height <= 0)
+                    {
+                        return false;
+                    }
                     mainRegion = LocalPInvoke.CreateRoundRectRgn(
                         taskbarEffectiveRegion.Left,
                         taskbarEffectiveRegion.Top,
-                        taskbarEffectiveRegion.Width - centredDistanceFromEdge,
+                        mainWidth,
                         taskbarEffectiveRegion.Height,
                         taskbarEffectiveRegion.CornerRadius,
                         taskbarEffectiveRegion.CornerRadius
                         );
                 }
 
+                if (mainRegion == IntPtr.Zero)
+                {
+                    return false;
+                }
+
                 // If the user has it enabled and the tray handle isn't null, create a region for the system tray and merge it with the taskbar region
-                if (settings.ShowTray && taskbar.TrayHwnd != IntPtr.Zero)
+                if (settings.ShowTray && taskbar.TrayHwnd != IntPtr.Zero &&
+                    taskbar.TrayRect.Right > taskbar.TrayRect.Left &&
+                    taskbar.TrayRect.Bottom > taskbar.TrayRect.Top)
                 {
                     IntPtr trayRegion = LocalPInvoke.CreateRoundRectRgn(
                         (taskbar.TrayRect.Left - taskbar.TaskbarRect.Left) - trayEffectiveRegion.Left,
@@ -303,9 +352,7 @@ namespace RoundedTB
                         trayEffectiveRegion.CornerRadius,
                         trayEffectiveRegion.CornerRadius
                         );
-
-                    LocalPInvoke.CombineRgn(workingRegion, trayRegion, mainRegion, 2);
-                    mainRegion = workingRegion;
+                    mainRegion = MergeRegions(mainRegion, trayRegion);
                 }
 
                 if (settings.ShowWidgets)
@@ -318,13 +365,16 @@ namespace RoundedTB
                         widgetsEffectiveRegion.CornerRadius,
                         widgetsEffectiveRegion.CornerRadius
                         );
-
-                    LocalPInvoke.CombineRgn(workingRegion, widgetsRegion, mainRegion, 2);
-                    mainRegion = workingRegion;
+                    mainRegion = MergeRegions(mainRegion, widgetsRegion);
                 }
 
                 // Apply the final region to the taskbar
-                LocalPInvoke.SetWindowRgn(taskbar.TaskbarHwnd, mainRegion, true);
+                if (mainRegion == IntPtr.Zero || LocalPInvoke.SetWindowRgn(taskbar.TaskbarHwnd, mainRegion, true) == 0)
+                {
+                    return false;
+                }
+                // SetWindowRgn transfers ownership to USER32 on success.
+                mainRegion = IntPtr.Zero;
                 if (settings.CompositionCompat)
                 {
                     Interaction.UpdateTranslucentTB(taskbar.TaskbarHwnd);
@@ -332,11 +382,56 @@ namespace RoundedTB
 
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Unable to update dynamic taskbar: {ex.Message}");
                 return false;
             }
+            finally
+            {
+                if (mainRegion != IntPtr.Zero)
+                {
+                    LocalPInvoke.DeleteObject(mainRegion);
+                }
+            }
 
+        }
+
+        private static IntPtr MergeRegions(IntPtr current, IntPtr addition)
+        {
+            if (current == IntPtr.Zero || addition == IntPtr.Zero)
+            {
+                if (addition != IntPtr.Zero)
+                {
+                    LocalPInvoke.DeleteObject(addition);
+                }
+                return current;
+            }
+
+            IntPtr merged = LocalPInvoke.CreateRectRgn(0, 0, 1, 1);
+            if (merged == IntPtr.Zero || LocalPInvoke.CombineRgn(merged, addition, current, 2) == 0)
+            {
+                if (merged != IntPtr.Zero)
+                {
+                    LocalPInvoke.DeleteObject(merged);
+                }
+                LocalPInvoke.DeleteObject(addition);
+                return current;
+            }
+
+            LocalPInvoke.DeleteObject(addition);
+            LocalPInvoke.DeleteObject(current);
+            return merged;
+        }
+
+        private static bool CanUpdate(Types.Taskbar taskbar, Types.Settings settings)
+        {
+            return taskbar != null && settings != null &&
+                taskbar.TaskbarHwnd != IntPtr.Zero && LocalPInvoke.IsWindow(taskbar.TaskbarHwnd) &&
+                taskbar.TaskbarRect.Right > taskbar.TaskbarRect.Left &&
+                taskbar.TaskbarRect.Bottom > taskbar.TaskbarRect.Top && taskbar.ScaleFactor > 0 &&
+                settings.SimpleTaskbarLayout != null && settings.DynamicAppListLayout != null &&
+                settings.DynamicTrayLayout != null && settings.DynamicWidgetsLayout != null;
         }
 
         /// <summary>
@@ -352,9 +447,9 @@ namespace RoundedTB
             IntPtr hwndPrevious = IntPtr.Zero;
             currentTaskbars.Add(LocalPInvoke.FindWindowExA(IntPtr.Zero, hwndPrevious, "Shell_TrayWnd", null));
 
-            if (currentTaskbars[0] == IntPtr.Zero)
+            if (currentTaskbars[0] == IntPtr.Zero || !LocalPInvoke.IsWindow(currentTaskbars[0]))
             {
-                return false;
+                return true;
             }
 
             if (currentTaskbars[0] != mainTaskbarHandle)
@@ -383,6 +478,33 @@ namespace RoundedTB
             return false;
         }
 
+        public static bool TaskbarHandlesMatch(IReadOnlyList<Types.Taskbar> taskbars)
+        {
+            if (taskbars == null || taskbars.Count == 0)
+            {
+                return false;
+            }
+
+            IntPtr main = LocalPInvoke.FindWindowExA(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null);
+            if (main == IntPtr.Zero || main != taskbars[0]?.TaskbarHwnd || !LocalPInvoke.IsWindow(main))
+            {
+                return false;
+            }
+
+            IntPtr previous = IntPtr.Zero;
+            for (int index = 1; index < taskbars.Count; index++)
+            {
+                IntPtr current = LocalPInvoke.FindWindowExA(IntPtr.Zero, previous, "Shell_SecondaryTrayWnd", null);
+                if (current == IntPtr.Zero || current != taskbars[index]?.TaskbarHwnd || !LocalPInvoke.IsWindow(current))
+                {
+                    return false;
+                }
+                previous = current;
+            }
+
+            return LocalPInvoke.FindWindowExA(IntPtr.Zero, previous, "Shell_SecondaryTrayWnd", null) == IntPtr.Zero;
+        }
+
         /// <summary>
         /// Checks if the provided update is valid.
         /// </summary>
@@ -406,6 +528,12 @@ namespace RoundedTB
             }
 
             // Get width of app list. Not strictly necessary as the applist is always measured from the left but doing so just in case
+            if (newTB.TaskbarRect.Right <= newTB.TaskbarRect.Left ||
+                newTB.TaskbarRect.Bottom <= newTB.TaskbarRect.Top)
+            {
+                return false;
+            }
+
             int newAppListWidth = newTB.AppListRect.Right - newTB.AppListRect.Left;
             int currentAppListWidth = currentTB.AppListRect.Right - currentTB.AppListRect.Left;
 
@@ -419,7 +547,7 @@ namespace RoundedTB
                 return false;
             }
 
-            if (newAppListWidth <= 20 * currentTB.ScaleFactor && newAppListWidth != 0)
+            if (newAppListWidth <= 0 || newAppListWidth <= 20 * currentTB.ScaleFactor)
             {
                 return false;
             }
@@ -472,7 +600,12 @@ namespace RoundedTB
             List<Types.Taskbar> retVal = new List<Types.Taskbar>();
 
             IntPtr hwndMain = LocalPInvoke.FindWindowExA(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null); // Find main taskbar
-            LocalPInvoke.GetWindowRect(hwndMain, out LocalPInvoke.RECT rectMain); // Get the RECT of the main taskbar
+            if (hwndMain == IntPtr.Zero || !LocalPInvoke.IsWindow(hwndMain) ||
+                !LocalPInvoke.GetWindowRect(hwndMain, out LocalPInvoke.RECT rectMain) ||
+                rectMain.Right <= rectMain.Left || rectMain.Bottom <= rectMain.Top)
+            {
+                return retVal;
+            }
             IntPtr hrgnMain = IntPtr.Zero; // Set recovery region to IntPtr.Zero
             IntPtr hwndTray = LocalPInvoke.FindWindowExA(hwndMain, IntPtr.Zero, "TrayNotifyWnd", null); // Get handle to the main taskbar's tray
             LocalPInvoke.GetWindowRect(hwndTray, out LocalPInvoke.RECT rectTray); // Get the RECT for the main taskbar's tray
@@ -495,14 +628,14 @@ namespace RoundedTB
                 TrayRect = rectTray,
                 AppListRect = rectAppList,
                 RecoveryHrgn = hrgnMain,
-                ScaleFactor = Convert.ToDouble(LocalPInvoke.GetDpiForWindow(hwndMain)) / 96.00,
+                ScaleFactor = Math.Max(1, Convert.ToDouble(LocalPInvoke.GetDpiForWindow(hwndMain)) / 96.00),
                 TaskbarRes = $"{rectMain.Right - rectMain.Left} x {rectMain.Bottom - rectMain.Top}",
                 Ignored = false
             });
             int style = LocalPInvoke.GetWindowLong(hwndMain, LocalPInvoke.GWL_EXSTYLE).ToInt32();
             if ((style & LocalPInvoke.WS_EX_LAYERED) != LocalPInvoke.WS_EX_LAYERED)
             {
-                LocalPInvoke.SetWindowLong(hwndMain, LocalPInvoke.GWL_EXSTYLE, LocalPInvoke.GetWindowLong(hwndMain, LocalPInvoke.GWL_EXSTYLE).ToInt32() ^ LocalPInvoke.WS_EX_LAYERED);
+                LocalPInvoke.SetWindowLong(hwndMain, LocalPInvoke.GWL_EXSTYLE, style | LocalPInvoke.WS_EX_LAYERED);
                 LocalPInvoke.SetLayeredWindowAttributes(hwndMain, 0, 255, LocalPInvoke.LWA_ALPHA);
             }
 
@@ -522,8 +655,12 @@ namespace RoundedTB
                 }
                 else
                 {
-                    LocalPInvoke.GetWindowRect(hwndCurrent, out LocalPInvoke.RECT rectCurrent);
-                    LocalPInvoke.GetWindowRgn(hwndCurrent, out IntPtr hrgnCurrent);
+                    if (!LocalPInvoke.GetWindowRect(hwndCurrent, out LocalPInvoke.RECT rectCurrent) ||
+                        rectCurrent.Right <= rectCurrent.Left || rectCurrent.Bottom <= rectCurrent.Top)
+                    {
+                        continue;
+                    }
+                    IntPtr hrgnCurrent = IntPtr.Zero;
                     Interaction interaction = new Interaction();
                     IntPtr hwndSecTray = IntPtr.Zero;
                     if (interaction.IsWindows11())
@@ -566,14 +703,14 @@ namespace RoundedTB
                         TrayRect = rectSecTray,
                         AppListRect = rectSecAppList,
                         RecoveryHrgn = hrgnCurrent,
-                        ScaleFactor = Convert.ToDouble(LocalPInvoke.GetDpiForWindow(hwndCurrent)) / 96.00,
+                        ScaleFactor = Math.Max(1, Convert.ToDouble(LocalPInvoke.GetDpiForWindow(hwndCurrent)) / 96.00),
                         TaskbarRes = $"{rectCurrent.Right - rectCurrent.Left} x {rectCurrent.Bottom - rectCurrent.Top}",
                         Ignored = false
                     });
                     style = LocalPInvoke.GetWindowLong(hwndCurrent, LocalPInvoke.GWL_EXSTYLE).ToInt32();
                     if ((style & LocalPInvoke.WS_EX_LAYERED) != LocalPInvoke.WS_EX_LAYERED)
                     {
-                        LocalPInvoke.SetWindowLong(hwndCurrent, LocalPInvoke.GWL_EXSTYLE, LocalPInvoke.GetWindowLong(hwndCurrent, LocalPInvoke.GWL_EXSTYLE).ToInt32() ^ LocalPInvoke.WS_EX_LAYERED);
+                        LocalPInvoke.SetWindowLong(hwndCurrent, LocalPInvoke.GWL_EXSTYLE, style | LocalPInvoke.WS_EX_LAYERED);
                         LocalPInvoke.SetLayeredWindowAttributes(hwndCurrent, 0, 255, LocalPInvoke.LWA_ALPHA);
                     }
                 }

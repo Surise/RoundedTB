@@ -10,6 +10,18 @@
 The easiest way to download RoundedTB is from the [Microsoft Store](https://www.microsoft.com/store/productId/9MTFTXSJ9M7F). You can also download the latest version from the Releases tab, unzip it and run `RoundedTB.exe`. If you're a madman, you can compile it yourself or check out the latest [Canary build](https://nightly.link/torchgm/RoundedTB/workflows/ci/master/rtb-artifacts.zip) (note these can be very unfinished, buggy and unstable).
 
 ## To use
+
+RoundedTB is a tray-resident application. After it starts, the configuration
+window is hidden so it does not occupy the taskbar. Right-click the RoundedTB
+tray icon and choose **Show RoundedTB** to open the settings window.
+
+### Language / 语言
+
+The first launch follows the Windows display language when it is Chinese;
+otherwise English is used. To switch at any time, open the tray menu and choose
+**Language** > **Simplified Chinese** or **English**. The choice is saved in
+`%LOCALAPPDATA%\rtb.json` and is restored on the next launch.
+
 ### Basic options
 The simplest way to use RoundedTB is by simply entering a margin and corner radius.
  - **Margin** - controls how many pixels to remove from each side of the taskbar, creating a margin around it that you can see and click through.
@@ -23,6 +35,23 @@ The advanced options allow for further customisation, at the cost of some user-f
 - **Show System Tray** - this toggles whether or not the system tray, clock etc. is displayed in dynamic/split mode. It can be toggled at any time by pressing <kbd>Win</kbd>+<kbd>F2</kbd>.
 - **TranslucentTB Compatibility** - due to a bug in Windows, apps that alter the composition of the taskbar don't allow RoundedTB's changes to show up automatically. Whilst I'm currently not aware of a fix, I've worked closely with [Sylveon](https://github.com/sylveon) to enable some level of compatibility between [TranslucentTB](https://github.com/TranslucentTB/TranslucentTB) and RoundedTB. This is experimental and *will* flicker slightly. It requires TranslucentTB version 2021.5 to function.
 - **About RoundedTB** - provides information about the current version of RoundedTB. The "Debug" section lets you open the config and log files.
+
+### Windows 11 23H2 and later
+
+Windows 11 moved the taskbar app list into a XAML surface. RoundedTB now reads
+the complete `TaskbarFrame` bounds, so dynamic/split layouts include all pinned
+and running applications instead of only the first few buttons. Primary and
+secondary taskbars are handled independently. If Explorer is restarted or
+rebuilds a taskbar, RoundedTB releases the old automation objects, rediscovers
+the handles and reapplies the current layout automatically.
+
+### Long-running use
+
+The background monitor retries transient Explorer/UI Automation failures,
+restores the taskbar if an update fails, and uses bounded waits for optional
+TranslucentTB refresh messages. Region handles created for dynamic layouts are
+released after every update, so the process can remain in the tray for long
+periods without accumulating GDI resources.
 
 
 
@@ -40,7 +69,12 @@ The advanced options allow for further customisation, at the cost of some user-f
  - Compatibility with taskbar mods outside of TranslucentTB version 2021.5 is not currently guaranteed.
 
 ## Other info
-RoundedTB is just a hobby of mine, and I'm certainly not an expert in this field, so I'm really sorry if you encounter a bug! If anything breaks catastrophically, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Esc</kbd> to open Task Manager, end RoundedTB and then restart Explorer. At worst, just reboot your PC. RoundedTB makes no permanent changes (though it will run on startup if you enable it from the tray icon), so restarting should clear any issues.
+RoundedTB makes no permanent changes (though it will run on startup if you
+enable it from the tray icon). If Explorer is manually restarted, leave
+RoundedTB running; it will wait for the new taskbar handles and restore the
+layout. If anything breaks catastrophically, press
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Esc</kbd> to open Task Manager, end RoundedTB
+and restart Explorer. At worst, reboot the PC.
 
 Feel free to let me know about any bugs by filing an issue so I can look into it. Alternatively if you want to discuss RoundedTB, get some insider sneak-peeks, need some assistance or just want to see what I'm up to, then feel free to join the [Discord server](https://discord.gg/wYQJd8VGSB).
 
@@ -59,4 +93,22 @@ Split mode has a couple of limitations and requires a small amount of setup to g
 Watch the following video for a guide on setting up split mode:
 
 https://user-images.githubusercontent.com/31840547/134795022-1312d011-40f2-4641-8c8d-3d6c0e752747.mp4
+
+## Build and publish
+
+The project targets `.NET 6 for Windows` and uses a COM reference for Windows
+UI Automation. Use Visual Studio 2022 MSBuild (the `dotnet build` command does
+not resolve this COM reference on all SDK versions):
+
+```powershell
+& "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe" `
+  RoundedTB.sln /t:Publish /p:Configuration=Release /p:Platform="Any CPU" `
+  /p:RuntimeIdentifier=win-x64 /p:SelfContained=true /p:PublishSingleFile=true `
+  /p:EnableCompressionInSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
+```
+
+The self-contained executable is written below
+`RoundedTB\bin\Release\net6.0-windows10.0.19041\win-x64\publish`. Windows 10
+and Windows 11 are supported; dynamic mode uses the Windows 11 taskbar
+surface, while Windows 10 uses split mode and its existing toolbar setup.
 

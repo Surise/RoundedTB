@@ -31,7 +31,10 @@ namespace RoundedTB
 
             public void Dispose()
             {
-                AppListXaml?.Dispose();
+                AppListXaml appList = AppListXaml;
+                AppListXaml = null;
+                appList?.Dispose();
+                GC.SuppressFinalize(this);
             }
         }
 
@@ -42,6 +45,7 @@ namespace RoundedTB
         public sealed class AppListXaml : IDisposable
         {
             private readonly IntPtr taskbarHwnd;
+            private readonly object syncRoot = new object();
             private IUIAutomation automation;
             private IUIAutomationElement taskbarFrame;
 
@@ -49,18 +53,50 @@ namespace RoundedTB
             {
                 this.taskbarHwnd = taskbarHwnd;
 
+                lock (syncRoot)
+                {
+                    Initialize();
+                }
+            }
+
+            public bool IsAvailable
+            {
+                get
+                {
+                    lock (syncRoot)
+                    {
+                        return taskbarFrame != null;
+                    }
+                }
+            }
+
+            private void Initialize()
+            {
+                if (taskbarFrame != null && automation != null)
+                {
+                    return;
+                }
+                ResetCore();
+                if (!LocalPInvoke.IsWindow(taskbarHwnd))
+                {
+                    return;
+                }
+
                 try
                 {
                     automation = new CUIAutomation();
                     taskbarFrame = FindTaskbarFrame(taskbarHwnd, automation);
+                    if (taskbarFrame == null)
+                    {
+                        ResetCore();
+                    }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    Dispose();
+                    Debug.WriteLine($"Unable to initialize XAML taskbar automation: {ex.Message}");
+                    ResetCore();
                 }
             }
-
-            public bool IsAvailable => taskbarFrame != null;
 
             private static IUIAutomationElement FindTaskbarFrame(IntPtr taskbarHwnd, IUIAutomation uia)
             {
@@ -108,89 +144,104 @@ namespace RoundedTB
 
             public LocalPInvoke.RECT? GetWindowRect()
             {
-                if (taskbarFrame == null || automation == null || !LocalPInvoke.IsWindow(taskbarHwnd))
+                lock (syncRoot)
                 {
-                    return null;
-                }
-
-                IUIAutomationElementArray children = null;
-                IUIAutomationCondition condition = null;
-                try
-                {
-                    condition = automation.CreateTrueCondition();
-                    children = taskbarFrame.FindAll(TreeScope.TreeScope_Children, condition);
-                    int childCount = children?.Length ?? 0;
-                    if (childCount == 0)
+                    Initialize();
+                    if (taskbarFrame == null || automation == null || !LocalPInvoke.IsWindow(taskbarHwnd))
                     {
                         return null;
                     }
 
-                    bool hasBounds = false;
-                    int left = 0;
-                    int top = 0;
-                    int right = 0;
-                    int bottom = 0;
-
-                    for (int i = 0; i < childCount; i++)
+                    IUIAutomationElementArray children = null;
+                    IUIAutomationCondition condition = null;
+                    try
                     {
-                        IUIAutomationElement child = null;
-                        try
+                        condition = automation.CreateTrueCondition();
+                        children = taskbarFrame.FindAll(TreeScope.TreeScope_Children, condition);
+                        int childCount = children?.Length ?? 0;
+                        if (childCount == 0)
                         {
-                            child = children.GetElement(i);
-                            tagRECT bounds = child.CurrentBoundingRectangle;
-                            if (bounds.right <= bounds.left || bounds.bottom <= bounds.top)
-                            {
-                                continue;
-                            }
+                            ResetCore();
+                            return null;
+                        }
 
-                            if (!hasBounds)
-                            {
-                                left = bounds.left;
-                                top = bounds.top;
-                                right = bounds.right;
-                                bottom = bounds.bottom;
-                                hasBounds = true;
-                            }
-                            else
-                            {
-                                left = Math.Min(left, bounds.left);
-                                top = Math.Min(top, bounds.top);
-                                right = Math.Max(right, bounds.right);
-                                bottom = Math.Max(bottom, bounds.bottom);
-                            }
-                        }
-                        finally
+                        bool hasBounds = false;
+                        int left = 0;
+                        int top = 0;
+                        int right = 0;
+                        int bottom = 0;
+
+                        for (int i = 0; i < childCount; i++)
                         {
-                            ReleaseComObject(child);
+                            IUIAutomationElement child = null;
+                            try
+                            {
+                                child = children.GetElement(i);
+                                tagRECT bounds = child.CurrentBoundingRectangle;
+                                if (bounds.right <= bounds.left || bounds.bottom <= bounds.top)
+                                {
+                                    continue;
+                                }
+
+                                if (!hasBounds)
+                                {
+                                    left = bounds.left;
+                                    top = bounds.top;
+                                    right = bounds.right;
+                                    bottom = bounds.bottom;
+                                    hasBounds = true;
+                                }
+                                else
+                                {
+                                    left = Math.Min(left, bounds.left);
+                                    top = Math.Min(top, bounds.top);
+                                    right = Math.Max(right, bounds.right);
+                                    bottom = Math.Max(bottom, bounds.bottom);
+                                }
+                            }
+                            finally
+                            {
+                                ReleaseComObject(child);
+                            }
                         }
+
+                        if (!hasBounds)
+                        {
+                            ResetCore();
+                            return null;
+                        }
+
+                        return new LocalPInvoke.RECT
+                        {
+                            Left = left,
+                            Top = top,
+                            Right = right,
+                            Bottom = bottom
+                        };
                     }
-
-                    if (!hasBounds)
+                    catch (Exception ex)
                     {
+                        Debug.WriteLine($"Unable to read the XAML taskbar bounds: {ex.Message}");
+                        ResetCore();
                         return null;
                     }
-
-                    return new LocalPInvoke.RECT
+                    finally
                     {
-                        Left = left,
-                        Top = top,
-                        Right = right,
-                        Bottom = bottom
-                    };
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Unable to read the XAML taskbar bounds: {ex.Message}");
-                    return null;
-                }
-                finally
-                {
-                    ReleaseComObject(condition);
-                    ReleaseComObject(children);
+                        ReleaseComObject(condition);
+                        ReleaseComObject(children);
+                    }
                 }
             }
 
             public void Dispose()
+            {
+                lock (syncRoot)
+                {
+                    ResetCore();
+                }
+            }
+
+            private void ResetCore()
             {
                 ReleaseComObject(taskbarFrame);
                 taskbarFrame = null;
@@ -202,7 +253,14 @@ namespace RoundedTB
             {
                 if (value != null && Marshal.IsComObject(value))
                 {
-                    Marshal.ReleaseComObject(value);
+                    try
+                    {
+                        Marshal.FinalReleaseComObject(value);
+                    }
+                    catch (InvalidComObjectException)
+                    {
+                        // The taskbar XAML tree can release an RCW during Explorer restart.
+                    }
                 }
             }
         }
@@ -210,6 +268,7 @@ namespace RoundedTB
         public class Settings
         {
             public int Version {  get; set; }
+            public string Language { get; set; }
             public SegmentSettings SimpleTaskbarLayout { get; set; }
             public SegmentSettings DynamicAppListLayout { get; set; }
             public SegmentSettings DynamicTrayLayout { get; set; }

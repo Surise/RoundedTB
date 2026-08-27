@@ -47,16 +47,34 @@ namespace RoundedTB
 
             mwin.Top = 0;
             mwin.Left = 0;
+            backgroundWorker.WorkerSupportsCancellation = true;
             backgroundWorker.DoWork += new DoWorkEventHandler(backgroundWorker_DoWork);
+            Closed += TaskbarEffect_Closed;
             backgroundWorker.RunWorkerAsync();
         }
 
         private void backgroundWorker_DoWork(object sender, DoWorkEventArgs e)
         {
-            while (true)
+            BackgroundWorker worker = (BackgroundWorker)sender;
+            while (!worker.CancellationPending)
             {
-                Dispatcher.Invoke(DispatcherPriority.Normal, new Action(() => MoveTheThingy()));
+                try
+                {
+                    Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(MoveTheThingy));
+                }
+                catch (InvalidOperationException)
+                {
+                    break;
+                }
                 Thread.Sleep(10);
+            }
+        }
+
+        private void TaskbarEffect_Closed(object sender, EventArgs e)
+        {
+            if (backgroundWorker.IsBusy)
+            {
+                backgroundWorker.CancelAsync();
             }
         }
         public void MoveTheThingy()

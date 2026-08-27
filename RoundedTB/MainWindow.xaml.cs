@@ -18,6 +18,7 @@ using System.Text;
 using WPFUI;
 using System.Windows.Forms;
 using System.Windows.Media;
+using System.Threading;
 
 namespace RoundedTB
 {
@@ -50,6 +51,16 @@ namespace RoundedTB
         private HwndSource source;
         public int selectedSegment = 0; // 0 = Simple, 1 = AppList, 2 = Tray, 3 = Widgets
         public int version = -1;
+        private bool closePending;
+        private List<Types.Taskbar> shutdownTaskbars;
+        private enum StartupLabel
+        {
+            RunAtStartup,
+            Unavailable,
+            Mandatory
+        }
+
+        private StartupLabel startupLabel = StartupLabel.RunAtStartup;
         /// <summary>
         /// Versions:
         /// -1: Canary
@@ -77,8 +88,6 @@ namespace RoundedTB
             {
                 isWindows11 = false;
                 activeSettings.IsWindows11 = false;
-                dynamicCheckBox.Content = "Split mode";
-                fillAltTabCheckBox.Content = "[Unavailable]";
             }
 
             // Initialise functions
@@ -100,7 +109,8 @@ namespace RoundedTB
                         LocalPInvoke.GetClassName(hwnd, windowClass, 1024);
                         LocalPInvoke.GetWindowText(hwnd, windowTitle, 1024);
 
-                        if (windowClass.ToString().Contains("HwndWrapper[RoundedTB.exe") && windowTitle.ToString() == "RoundedTB")
+                        if (windowClass.ToString().StartsWith("HwndWrapper[RoundedTB", StringComparison.OrdinalIgnoreCase) &&
+                            windowTitle.ToString() == "RoundedTB")
                         {
                             LocalPInvoke.SetWindowText(hwnd, "RoundedTB_SettingsRequest");
                         }
@@ -125,11 +135,12 @@ namespace RoundedTB
             if (System.IO.File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Startup), "RoundedTB.lnk")) && !IsRunningAsUWP())
             {
                 StartupCheckBox.IsChecked = true;
-                ShowMenuItem.Header = "Show RoundedTB";
+                SetShowMenuItemHeader(false);
             }
             taskbarThread.WorkerSupportsCancellation = true;
             taskbarThread.WorkerReportsProgress = true;
             taskbarThread.DoWork +=background.DoWork;
+            taskbarThread.RunWorkerCompleted += TaskbarThread_RunWorkerCompleted;
 
             // Load settings into memory/UI
             interaction.FileSystem();
@@ -151,6 +162,7 @@ namespace RoundedTB
                 {
                     activeSettings = new Types.Settings()
                     {
+                        Language = Localization.Detect(),
                         SimpleTaskbarLayout = new Types.SegmentSettings{ CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
                         DynamicAppListLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
                         DynamicTrayLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
@@ -172,6 +184,7 @@ namespace RoundedTB
                 {
                     activeSettings = new Types.Settings()
                     {
+                        Language = Localization.Detect(),
                         SimpleTaskbarLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
                         DynamicAppListLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
                         DynamicTrayLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
@@ -191,6 +204,16 @@ namespace RoundedTB
                 }
             }
 
+            // Preserve existing configurations while giving older files a language default.
+            if (string.IsNullOrWhiteSpace(activeSettings.Language))
+            {
+                activeSettings.Language = Localization.Detect();
+            }
+            Localization.SetLanguage(activeSettings.Language);
+            activeSettings.Language = Localization.IsChinese
+                ? Localization.SimplifiedChinese
+                : Localization.English;
+
             if (isWindows11)
             {
                 activeSettings.IsWindows11 = true;
@@ -199,6 +222,8 @@ namespace RoundedTB
             {
                 activeSettings.IsWindows11 = false;
             }
+
+            ApplyLocalization();
 
             if (version != activeSettings.Version && version != -1)
             {
@@ -322,13 +347,111 @@ namespace RoundedTB
                 {
 
                 }
-                ShowMenuItem.Header = "Hide RoundedTB";
+                SetShowMenuItemHeader(true);
             }
 
             AutoHide(true, taskbarDetails);
 
             UpdateUi();
 
+        }
+
+        public void ApplyLocalization()
+        {
+            if (activeSettings == null)
+            {
+                return;
+            }
+
+            Localization.SetLanguage(activeSettings.Language);
+            Title = Localization.Text("RoundedTB", "RoundedTB");
+            mainTitleBar.Title = Localization.Text("RoundedTB - Configuration", "RoundedTB - 配置");
+            cornerRadiusLabel.Content = Localization.Text("Corner radius", "圆角半径");
+            aboutButton.Content = Localization.Text("Help", "帮助");
+            applyButton.Content = Localization.Text("Apply", "应用");
+            dynamicCheckBox.Content = isWindows11
+                ? Localization.Text("Dynamic mode", "动态模式")
+                : Localization.Text("Split mode", "分栏模式");
+            showTrayCheckBox.Content = Localization.Text("Show this segment", "显示此分区");
+            showWidgetsCheckBox.Content = Localization.Text("Show this segment", "显示此分区");
+            centredCheckBox.Content = Localization.Text("Centred taskbar?", "任务栏居中？");
+            splitHelpButton.Content = Localization.Text("Click me!", "点击查看说明");
+            showSegmentsOnHoverCheckBox.Content = Localization.Text(
+                "Show segments only when hovered over with the mouse - PERFORMANCE ISSUES",
+                "仅在鼠标悬停时显示分区（可能有性能问题）");
+            fillMaximisedCheckBox.Content = Localization.Text(
+                "When a window is maximised, restore the taskbar",
+                "窗口最大化时恢复任务栏");
+            fillAltTabCheckBox.Content = isWindows11
+                ? Localization.Text(
+                    "When alt+tab or win+tab is pressed, restore the taskbar",
+                    "按 Alt+Tab 或 Win+Tab 时恢复任务栏")
+                : Localization.Text("[Unavailable]", "[不可用]");
+            compositionFixCheckBox.Content = Localization.Text(
+                "Improve compatibility with TranslucentTB and other mods (may cause flickering)",
+                "提高与 TranslucentTB 及其他修改工具的兼容性（可能导致闪烁）");
+            mTopLabel.Content = Localization.Text("Top Margin", "上边距");
+            mBottomLabel.Content = Localization.Text("Bottom Margin", "下边距");
+            mLeftLabel.Content = Localization.Text("Left Margin", "左边距");
+            mRightLabel.Content = Localization.Text("Right Margin", "右边距");
+            diagramTitleLabel.Content = "RoundedTB";
+            diagramSubtitleLabel.Content = Localization.Text(
+                "To begin, select a taskbar segment below.",
+                "请选择下方的任务栏分区开始设置。");
+            autoHideLabel.Content = Localization.Text("Auto-hide", "自动隐藏");
+            autoHideAlwaysShowItem.Content = Localization.Text("Always show", "始终显示");
+            autoHideAlwaysHideItem.Content = Localization.Text("Always hide", "始终隐藏");
+            autoHideUnavailableItem.Content = Localization.Text("[unavailable]", "[不可用]");
+
+            UpdateStartupLabel();
+            DebugMenuItem.Header = Localization.Text("Debug", "调试");
+            LanguageMenuItem.Header = Localization.Text("Language", "语言");
+            EnglishLanguageMenuItem.Header = Localization.Text("English", "英文");
+            ChineseLanguageMenuItem.Header = Localization.Text("Simplified Chinese", "简体中文");
+            CloseMenuItem.Header = Localization.Text("Close RoundedTB", "退出 RoundedTB");
+            EnglishLanguageMenuItem.IsChecked = !Localization.IsChinese;
+            ChineseLanguageMenuItem.IsChecked = Localization.IsChinese;
+            SetShowMenuItemHeader(IsVisible);
+        }
+
+        private void UpdateStartupLabel()
+        {
+            StartupCheckBox.Content = startupLabel switch
+            {
+                StartupLabel.Unavailable => Localization.Text("Startup unavailable", "开机启动不可用"),
+                StartupLabel.Mandatory => Localization.Text("Startup mandatory", "开机启动由系统强制启用"),
+                _ => Localization.Text("Run at startup", "开机启动")
+            };
+        }
+
+        private void SetShowMenuItemHeader(bool showWindow)
+        {
+            ShowMenuItem.Header = showWindow
+                ? Localization.Text("Hide RoundedTB", "隐藏 RoundedTB")
+                : Localization.Text("Show RoundedTB", "显示 RoundedTB");
+        }
+
+        private void EnglishLanguageMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ChangeLanguage(Localization.English);
+        }
+
+        private void ChineseLanguageMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            ChangeLanguage(Localization.SimplifiedChinese);
+        }
+
+        private void ChangeLanguage(string language)
+        {
+            if (activeSettings == null)
+            {
+                return;
+            }
+
+            activeSettings.Language = language;
+            Localization.SetLanguage(language);
+            ApplyLocalization();
+            interaction?.WriteJSON();
         }
 
         public void UpdateUi()
@@ -374,6 +497,11 @@ namespace RoundedTB
 
         public void AutoHide(bool enabled, List<Types.Taskbar> taskbarDetails)
         {
+            if (taskbarDetails == null || taskbarDetails.Count == 0)
+            {
+                return;
+            }
+
             int workingHeight = Screen.PrimaryScreen.WorkingArea.Height;
             int boundsHeight = Screen.PrimaryScreen.Bounds.Height;
             int taskbarHeight = taskbarDetails[0].TaskbarRect.Bottom - taskbarDetails[0].TaskbarRect.Top;
@@ -442,7 +570,7 @@ namespace RoundedTB
         }
 
 
-        public void ApplyButton_Click(object sender, RoutedEventArgs e)
+        public async void ApplyButton_Click(object sender, RoutedEventArgs e)
         {
             int mt = 0;
             int ml = 0;
@@ -471,6 +599,29 @@ namespace RoundedTB
             activeSettings.FillOnTaskSwitch = (bool)fillAltTabCheckBox.IsChecked;
             activeSettings.ShowSegmentsOnHover = (bool)showSegmentsOnHoverCheckBox.IsChecked;
 
+            // Stop the previous worker without blocking the dispatcher. The old
+            // implementation busy-waited here and could deadlock on Dispatcher.Invoke.
+            if (!await StopBackgroundWorkerAsync())
+            {
+                return;
+            }
+
+            // Cancellation resets the old taskbar objects so a transient failure
+            // cannot leave stale UI Automation handles behind. Build a fresh
+            // snapshot before applying the new settings.
+            if (taskbarDetails == null || taskbarDetails.Count == 0)
+            {
+                try
+                {
+                    taskbarDetails = Taskbar.GenerateTaskbarInfo();
+                }
+                catch (Exception ex)
+                {
+                    interaction.AddLog($"Unable to rediscover taskbars while applying settings: {ex}");
+                    taskbarDetails = new List<Types.Taskbar>();
+                }
+            }
+
             try
             {
                 foreach (Types.Taskbar taskbar in taskbarDetails)
@@ -492,21 +643,6 @@ namespace RoundedTB
             }
 
 
-            if (taskbarThread.IsBusy == false)
-            {
-                taskbarThread.RunWorkerAsync((mt, ml, mb, mr, 0));
-            }
-            else
-            {
-                taskbarThread.CancelAsync();
-                while (taskbarThread.IsBusy == true)
-                {
-                    System.Windows.Forms.Application.DoEvents();
-                    System.Threading.Thread.Sleep(100);
-                }
-                taskbarThread.RunWorkerAsync((mt, ml, mb, mr, 0));
-            }
-
             if (activeSettings.AutoHide < 1)
             {
                 AutoHide(false, taskbarDetails);
@@ -519,6 +655,43 @@ namespace RoundedTB
             TrayIconCheck();
             UpdateUi();
 
+            if (!taskbarThread.IsBusy && !closePending)
+            {
+                taskbarThread.RunWorkerAsync((mt, ml, mb, mr, 0));
+            }
+
+        }
+
+        private async Task<bool> StopBackgroundWorkerAsync()
+        {
+            if (!taskbarThread.IsBusy)
+            {
+                return true;
+            }
+
+            taskbarThread.CancelAsync();
+            DateTime deadline = DateTime.UtcNow.AddSeconds(2);
+            while (taskbarThread.IsBusy)
+            {
+                await Task.Delay(25);
+                if (DateTime.UtcNow >= deadline)
+                {
+                    interaction.AddLog("Timed out waiting for the background worker to stop; settings were not applied.");
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private void TaskbarThread_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            if (!closePending)
+            {
+                return;
+            }
+
+            closePending = false;
+            Dispatcher.BeginInvoke(new Action(Close), DispatcherPriority.Background);
         }
 
         protected override void OnClosing(CancelEventArgs e)
@@ -529,42 +702,31 @@ namespace RoundedTB
             {
                 e.Cancel = true;
                 Visibility = Visibility.Hidden;
-                ShowMenuItem.Header = "Show RoundedTB";
+                SetShowMenuItemHeader(false);
             }
             else
             {
 
 
-                try
+                if (taskbarThread.IsBusy)
                 {
-                    taskbarThread.CancelAsync();
-                }
-                catch (Exception aaaa)
-                {
-                    interaction.AddLog(aaaa.Message);
-                }
-                while (taskbarThread.IsBusy == true)
-                {
-                    System.Windows.Forms.Application.DoEvents();
-                    System.Threading.Thread.Sleep(100);
+                    shutdownTaskbars = taskbarDetails == null
+                        ? new List<Types.Taskbar>()
+                        : new List<Types.Taskbar>(taskbarDetails);
+                    closePending = true;
+                    try
+                    {
+                        taskbarThread.CancelAsync();
+                    }
+                    catch (Exception aaaa)
+                    {
+                        interaction.AddLog(aaaa.Message);
+                    }
+                    e.Cancel = true;
+                    return;
                 }
 
-                try
-                {
-                    foreach (var tbDeets in taskbarDetails)
-                    {
-                        Taskbar.ResetTaskbar(tbDeets, activeSettings);
-                    }
-                    if (activeSettings.AutoHide > 0)
-                    {
-                        AutoHide(false, taskbarDetails);
-                    }
-                }
-                catch (InvalidOperationException aaaa)
-                {
-                    interaction.AddLog($"Taskbar structure changed on exit:\n{aaaa.Message}");
-                }
-                interaction.AddLog("Exiting RoundedTB.");
+                FinalizeClose();
             }
             if (!isAlreadyRunning)
             {
@@ -590,7 +752,7 @@ namespace RoundedTB
             if (IsVisible == false)
             {
                 Visibility = Visibility.Visible;
-                ShowMenuItem.Header = "Hide RoundedTB";
+                SetShowMenuItemHeader(true);
             }
             else
             {
@@ -600,7 +762,7 @@ namespace RoundedTB
                     App.Current.Windows[windowCount].Close();
                 }
                 Visibility = Visibility.Hidden;
-                ShowMenuItem.Header = "Show RoundedTB";
+                SetShowMenuItemHeader(false);
             }
         }
 
@@ -688,9 +850,10 @@ namespace RoundedTB
                     if (clean)
                     {
                         Visibility = Visibility.Visible;
-                        ShowMenuItem.Header = "Hide RoundedTB";
+                        SetShowMenuItemHeader(true);
                     }
-                    StartupCheckBox.Content = "Run at startup";
+                    startupLabel = StartupLabel.RunAtStartup;
+                    UpdateStartupLabel();
                     break;
 
                 case StartupTaskState.DisabledByUser:
@@ -699,9 +862,10 @@ namespace RoundedTB
                     if (clean)
                     {
                         Visibility = Visibility.Visible;
-                        ShowMenuItem.Header = "Hide RoundedTB";
+                        SetShowMenuItemHeader(true);
                     }
-                    StartupCheckBox.Content = "Startup unavailable";
+                    startupLabel = StartupLabel.Unavailable;
+                    UpdateStartupLabel();
                     break;
 
                 case StartupTaskState.EnabledByPolicy:
@@ -710,9 +874,10 @@ namespace RoundedTB
                     if (clean)
                     {
                         Visibility = Visibility.Hidden;
-                        ShowMenuItem.Header = "Show RoundedTB";
+                        SetShowMenuItemHeader(false);
                     }
-                    StartupCheckBox.Content = "Startup mandatory";
+                    startupLabel = StartupLabel.Mandatory;
+                    UpdateStartupLabel();
                     break;
 
                 case StartupTaskState.DisabledByPolicy:
@@ -721,9 +886,10 @@ namespace RoundedTB
                     if (clean)
                     {
                         Visibility = Visibility.Visible;
-                        ShowMenuItem.Header = "Hide RoundedTB";
+                        SetShowMenuItemHeader(true);
                     }
-                    StartupCheckBox.Content = "Startup unavailable";
+                    startupLabel = StartupLabel.Unavailable;
+                    UpdateStartupLabel();
                     break;
 
                 case StartupTaskState.Enabled:
@@ -732,9 +898,10 @@ namespace RoundedTB
                     if (clean)
                     {
                         Visibility = Visibility.Hidden;
-                        ShowMenuItem.Header = "Show RoundedTB";
+                        SetShowMenuItemHeader(false);
                     }
-                    StartupCheckBox.Content = "Run at startup";
+                    startupLabel = StartupLabel.RunAtStartup;
+                    UpdateStartupLabel();
                     break;
             }
         }
@@ -756,18 +923,18 @@ namespace RoundedTB
 
         private void DebugMenuItem_Click(object sender, RoutedEventArgs e)
         {
+            if (taskbarDetails == null || taskbarDetails.Count == 0 ||
+                taskbarDetails[0].TaskbarHwnd == IntPtr.Zero)
+            {
+                return;
+            }
+
             IntPtr hwndNext = LocalPInvoke.FindWindowExA(taskbarDetails[0].TaskbarHwnd, IntPtr.Zero, "Start", null);
             List<IntPtr> floatingMilkshakesBitsOfTaskbar = new List<IntPtr>();
-            floatingMilkshakesBitsOfTaskbar.Add(hwndNext);
-            while (true) 
+            while (hwndNext != IntPtr.Zero && !floatingMilkshakesBitsOfTaskbar.Contains(hwndNext))
             {
-                hwndNext = LocalPInvoke.FindWindowExA(taskbarDetails[0].TaskbarHwnd, hwndNext, null, null);
-                if (floatingMilkshakesBitsOfTaskbar.Contains(hwndNext))
-                {
-                    break;
-                }
                 floatingMilkshakesBitsOfTaskbar.Add(hwndNext);
-
+                hwndNext = LocalPInvoke.FindWindowExA(taskbarDetails[0].TaskbarHwnd, hwndNext, null, null);
             }
             foreach (IntPtr hwnd in floatingMilkshakesBitsOfTaskbar)
             {
@@ -863,14 +1030,42 @@ namespace RoundedTB
             Debug.WriteLine(System.Windows.Forms.Keys.J.GetHashCode());
             Visibility = Visibility.Hidden;
             Opacity = 1;
+            SetShowMenuItemHeader(false);
+        }
+
+        private void FinalizeClose()
+        {
+            try
+            {
+                List<Types.Taskbar> taskbars = shutdownTaskbars ?? taskbarDetails;
+                if (taskbars != null)
+                {
+                    foreach (Types.Taskbar taskbar in taskbars)
+                    {
+                        Taskbar.ResetTaskbar(taskbar, activeSettings);
+                    }
+                    if (activeSettings.AutoHide > 0 && taskbars.Count > 0)
+                    {
+                        AutoHide(false, taskbars);
+                    }
+                }
+            }
+            catch (Exception aaaa)
+            {
+                interaction.AddLog($"Taskbar structure changed on exit:\n{aaaa.Message}");
+            }
+            shutdownTaskbars = null;
+            interaction.AddLog("Exiting RoundedTB.");
         }
 
         private void splitHelpButton_Click(object sender, RoutedEventArgs e)
         {
             Infobox ib = new Infobox();
-            ib.Title = "RoundedTB - Split mode configuration";
-            ib.titleBlock.Text = "How to use Split Mode";
-            ib.bodyBlock.Text = "Split mode has a couple of limitations and requires a small amount of setup to get working properly.\n\nLimitations:\n1) Split mode doesn't resize itself automatically. This feature will be coming to RoundedTB for Windows 10 in the future.\n2) Toolbars are not compatible with split mode currently, and will need to be disabled apart from one (more on that in a moment).\n3) Split mode only works when the taskbar is horizontal at the top or bottom of the screen.\n\nSetup:\n1) Right-click the taskbar and disable \"Lock the taskbar\".\n2) Right-click it again and turn off any existing toolbars.\n3) Right-click a third time, select Toolbars > Desktop.\n4) Use the small || handle to resize the taskbar as you please.";
+            ib.Title = Localization.Text("RoundedTB - Split mode configuration", "RoundedTB - 分栏模式配置");
+            ib.titleBlock.Text = Localization.Text("How to use Split Mode", "如何使用分栏模式");
+            ib.bodyBlock.Text = Localization.Text(
+                "Split mode has a couple of limitations and requires a small amount of setup to get working properly.\n\nLimitations:\n1) Split mode doesn't resize itself automatically. This feature will be coming to RoundedTB for Windows 10 in the future.\n2) Toolbars are not compatible with split mode currently, and will need to be disabled apart from one (more on that in a moment).\n3) Split mode only works when the taskbar is horizontal at the top or bottom of the screen.\n\nSetup:\n1) Right-click the taskbar and disable \"Lock the taskbar\".\n2) Right-click it again and turn off any existing toolbars.\n3) Right-click a third time, select Toolbars > Desktop.\n4) Use the small || handle to resize the taskbar as you please.",
+                "分栏模式有一些限制，需要完成少量设置才能正常工作。\n\n限制：\n1) 分栏模式不会自动调整大小，未来版本会改进 Windows 10 支持。\n2) 分栏模式暂不兼容工具栏，除一个工具栏外请关闭其他工具栏。\n3) 分栏模式仅支持任务栏位于屏幕顶部或底部。\n\n设置：\n1) 右键任务栏，取消勾选“锁定任务栏”。\n2) 再次右键任务栏，关闭现有工具栏。\n3) 右键任务栏，选择“工具栏 > 桌面”。\n4) 使用小的 || 手柄按需调整任务栏大小。");
             ib.ShowDialog();
         }
 
@@ -880,9 +1075,11 @@ namespace RoundedTB
             {
                 Infobox ib = new Infobox();
                 ib.Height = 450;
-                ib.Title = "RoundedTB - TranslucentTB compatibility";
-                ib.titleBlock.Text = "Compatibility with TranslucentTB";
-                ib.bodyBlock.Text = "\nTranslucentTB is a utility that allows you to customise the opacity, blur and colour of the taskbar seamlessly with significantly finer control than other tools. Enable this option to allow RoundedTB and TranslucentTB to work together.\n\nThis is necessary due to a bug in Windows (it's not the fault of RoundedTB or TranslucentTB), and you might encounter some minor flickering when the taskbar \"updates\" (changes size, roundness or position). This is usually pretty minimal and many people use RoundedTB and TranslucentTB in tandem without complaint, but if it bothers you then I recommend sticking with either RoundedTB or TranslucentTB until a better solution is available.\n\nRegardless though, go show TranslucentTB some love! It's the OG Windows 10 aesthetic taskbar mod, the first one on the Microsoft Store and the project that inspired me to make RoundedTB. Plus, the dev is pretty awesome 💖";
+                ib.Title = Localization.Text("RoundedTB - TranslucentTB compatibility", "RoundedTB - TranslucentTB 兼容性");
+                ib.titleBlock.Text = Localization.Text("Compatibility with TranslucentTB", "与 TranslucentTB 兼容");
+                ib.bodyBlock.Text = Localization.Text(
+                    "\nTranslucentTB is a utility that allows you to customise the opacity, blur and colour of the taskbar seamlessly with significantly finer control than other tools. Enable this option to allow RoundedTB and TranslucentTB to work together.\n\nThis is necessary due to a bug in Windows (it's not the fault of RoundedTB or TranslucentTB), and you might encounter some minor flickering when the taskbar \"updates\" (changes size, roundness or position). This is usually pretty minimal and many people use RoundedTB and TranslucentTB in tandem without complaint, but if it bothers you then I recommend sticking with either RoundedTB or TranslucentTB until a better solution is available.\n\nRegardless though, go show TranslucentTB some love! It's the OG Windows 10 aesthetic taskbar mod, the first one on the Microsoft Store and the project that inspired me to make RoundedTB. Plus, the dev is pretty awesome 💖",
+                    "\nTranslucentTB 可无缝自定义任务栏的不透明度、模糊效果和颜色，控制精度高于其他工具。启用此选项后，RoundedTB 可以与 TranslucentTB 协同工作。\n\n这是因为 Windows 中的一个错误（并非 RoundedTB 或 TranslucentTB 的问题）。任务栏“更新”（大小、圆角或位置变化）时可能出现轻微闪烁。通常影响很小；如果仍然困扰你，可以暂时只使用 RoundedTB 或 TranslucentTB。\n\n也请支持 TranslucentTB！它是 Windows 10 任务栏美化工具的先驱，也是启发 RoundedTB 的项目。");
                 ib.ShowDialog();
             }
         }

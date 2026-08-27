@@ -28,6 +28,10 @@
                 <ContextMenu MouseEnter="ContextMenu_MouseEnter">
                     <CheckBox x:Name ="StartupCheckBox" Content="Run at startup" Click="Startup_Clicked"/>
                     <MenuItem x:Name="DebugMenuItem" Header="Debug" Visibility ="Hidden" Click="DebugMenuItem_Click" Height="0"/>
+                    <MenuItem x:Name="LanguageMenuItem" Header="Language">
+                        <MenuItem x:Name="EnglishLanguageMenuItem" Header="English" IsCheckable="True" Click="EnglishLanguageMenuItem_Click"/>
+                        <MenuItem x:Name="ChineseLanguageMenuItem" Header="Simplified Chinese" IsCheckable="True" Click="ChineseLanguageMenuItem_Click"/>
+                    </MenuItem>
                     <MenuItem x:Name ="ShowMenuItem" Header="Show RoundedTB" Click="ShowMenuItem_Click"/>
                     <MenuItem x:Name ="CloseMenuItem" Header="Close RoundedTB" Click="CloseMenuItem_Click"/>
                 </ContextMenu>
@@ -83,16 +87,16 @@
                 <wpfui:Button x:Name="trayRectStandIn" Margin="415,0,5,5" Click="trayRectStandIn_Click" VerticalAlignment="Bottom" Height="32" Appearance="Secondary"/>
                 <wpfui:Button x:Name="widgetsRectStandIn" Margin="5,0,415,5" Click="widgetsRectStandIn_Click" VerticalAlignment="Bottom" Height="32" Appearance="Secondary"/>
 
-                <Label Content="RoundedTB" HorizontalAlignment="Center" Margin="0,59,0,108" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" FontSize="60" Opacity="0.75"/>
-                <Label Content="To begin, select a taskbar segment below." HorizontalAlignment="Center" Margin="0,138,0,75" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" FontSize="20" Opacity="0.75"/>
+                <Label x:Name="diagramTitleLabel" Content="RoundedTB" HorizontalAlignment="Center" Margin="0,59,0,108" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" FontSize="60" Opacity="0.75"/>
+                <Label x:Name="diagramSubtitleLabel" Content="To begin, select a taskbar segment below." HorizontalAlignment="Center" Margin="0,138,0,75" FontFamily="Segoe UI Variable Display" FontWeight="SemiBold" FontSize="20" Opacity="0.75"/>
             </Grid>
 
             <Grid Margin="0,0,10,83" HorizontalAlignment="Right" Width="133" Height="50" VerticalAlignment="Bottom">
-                <Label Content="Auto-hide" Height="20" VerticalAlignment="Top"/>
+                <Label x:Name="autoHideLabel" Content="Auto-hide" Height="20" VerticalAlignment="Top"/>
                 <ComboBox x:Name="autoHideComboBox" Margin="0,18,0,0" VerticalAlignment="Top">
-                    <ComboBoxItem>Always show</ComboBoxItem>
-                    <ComboBoxItem>Always hide</ComboBoxItem>
-                    <ComboBoxItem>[unavailable]</ComboBoxItem>
+                    <ComboBoxItem x:Name="autoHideAlwaysShowItem">Always show</ComboBoxItem>
+                    <ComboBoxItem x:Name="autoHideAlwaysHideItem">Always hide</ComboBoxItem>
+                    <ComboBoxItem x:Name="autoHideUnavailableItem">[unavailable]</ComboBoxItem>
                 </ComboBox>
             </Grid>
             <Rectangle HorizontalAlignment="Center" Margin="0,262,0,0" Stroke="#4C909090" Width="698" RadiusX="1" RadiusY="1.5" Height="1" VerticalAlignment="Top"/>

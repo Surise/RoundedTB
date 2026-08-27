@@ -13,7 +13,8 @@ namespace RoundedTB
     public class Interaction
     {
         public MainWindow mw;
-        string m = "";
+        private static readonly object FileSync = new object();
+        private const long MaxLogBytes = 1024 * 1024;
 
         public Interaction()
         {
@@ -39,8 +40,9 @@ namespace RoundedTB
             {
                 jsonSettings = File.ReadAllText(mw.configPath);
             }
-            catch (IOException)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Unable to read settings: {ex.Message}");
                 return null;
             }
 
@@ -54,8 +56,9 @@ namespace RoundedTB
             {
                 settings = JsonConvert.DeserializeObject<Types.Settings>(jsonSettings);
             }
-            catch (JsonException)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Unable to parse settings: {ex.Message}");
                 return null;
             }
 
@@ -93,9 +96,10 @@ namespace RoundedTB
                         : CreateSegment(legacyRadius ?? defaultRadius, margin);
                 }
             }
-            catch (JsonException)
+            catch (Exception ex)
             {
                 // The typed deserialization above succeeded; retain the default fallback.
+                Debug.WriteLine($"Unable to inspect legacy settings: {ex.Message}");
             }
 
             settings.SimpleTaskbarLayout ??= CloneSegment(fallback);
@@ -144,19 +148,83 @@ namespace RoundedTB
 
         public void WriteJSON()
         {
-            File.Create(mw.configPath).Close();
-            File.WriteAllText(mw.configPath, JsonConvert.SerializeObject(mw.activeSettings, Formatting.Indented));
+            if (mw == null || mw.activeSettings == null || string.IsNullOrWhiteSpace(mw.configPath))
+            {
+                return;
+            }
+
+            try
+            {
+                string json = JsonConvert.SerializeObject(mw.activeSettings, Formatting.Indented);
+                string temporaryPath = mw.configPath + ".tmp";
+                lock (FileSync)
+                {
+                    string directory = Path.GetDirectoryName(mw.configPath);
+                    if (!string.IsNullOrWhiteSpace(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+                    File.WriteAllText(temporaryPath, json);
+                    if (File.Exists(mw.configPath))
+                    {
+                        try
+                        {
+                            File.Replace(temporaryPath, mw.configPath, null, true);
+                        }
+                        catch (PlatformNotSupportedException)
+                        {
+                            File.Copy(temporaryPath, mw.configPath, true);
+                            File.Delete(temporaryPath);
+                        }
+                        catch (IOException)
+                        {
+                            File.Copy(temporaryPath, mw.configPath, true);
+                            File.Delete(temporaryPath);
+                        }
+                    }
+                    else
+                    {
+                        File.Move(temporaryPath, mw.configPath);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Unable to write settings: {ex.Message}");
+            }
         }
 
         public void FileSystem()
         {
-            File.Create(mw.logPath).Close();
+            if (mw == null)
+            {
+                return;
+            }
+
+            try
+            {
+                string logDirectory = Path.GetDirectoryName(mw.logPath);
+                if (!string.IsNullOrWhiteSpace(logDirectory))
+                {
+                    Directory.CreateDirectory(logDirectory);
+                }
+                if (!File.Exists(mw.logPath))
+                {
+                    File.Create(mw.logPath).Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Unable to initialize log file: {ex.Message}");
+            }
+
             if (!File.Exists(mw.configPath))
             {
                 if (mw.isWindows11)
                 {
                     mw.activeSettings = new Types.Settings()
                     {
+                        Language = Localization.Detect(),
                         SimpleTaskbarLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
                         DynamicAppListLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
                         DynamicTrayLayout = new Types.SegmentSettings { CornerRadius = 7, MarginLeft = 3, MarginTop = 3, MarginRight = 3, MarginBottom = 3 },
@@ -177,6 +245,7 @@ namespace RoundedTB
                 {
                     mw.activeSettings = new Types.Settings()
                     {
+                        Language = Localization.Detect(),
                         SimpleTaskbarLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
                         DynamicAppListLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
                         DynamicTrayLayout = new Types.SegmentSettings { CornerRadius = 16, MarginLeft = 2, MarginTop = 2, MarginRight = 2, MarginBottom = 2 },
@@ -196,9 +265,16 @@ namespace RoundedTB
                 
                 WriteJSON(); // butts - Missy Quarry, 2020
             }
-            if (File.ReadAllText(mw.configPath) == "" || File.ReadAllText(mw.configPath) == null)
+            try
             {
-                WriteJSON(); // Initialises empty file
+                if (string.IsNullOrWhiteSpace(File.ReadAllText(mw.configPath)))
+                {
+                    WriteJSON(); // Initializes empty file
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Unable to inspect config file: {ex.Message}");
             }
 
         }
@@ -217,8 +293,26 @@ namespace RoundedTB
 
         public void AddLog(string message)
         {
-            //m = $"[{DateTime.Now}] {message}\n";
-            //File.AppendAllText(mw.logPath, m);
+            if (mw == null || string.IsNullOrWhiteSpace(mw.logPath) || string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            try
+            {
+                lock (FileSync)
+                {
+                    if (File.Exists(mw.logPath) && new FileInfo(mw.logPath).Length >= MaxLogBytes)
+                    {
+                        File.WriteAllText(mw.logPath, $"[{DateTime.Now:O}] Log rotated.{Environment.NewLine}");
+                    }
+                    File.AppendAllText(mw.logPath, $"[{DateTime.Now:O}] {message}{Environment.NewLine}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Unable to write log: {ex.Message}");
+            }
         }
 
         public static bool IsTranslucentTBRunning()
@@ -237,7 +331,22 @@ namespace RoundedTB
         // Request that TranslucentTB forefully refesh the taskbar
         public static IntPtr UpdateTranslucentTB(IntPtr taskbarHwnd)
         {
-            return LocalPInvoke.SendMessage(LocalPInvoke.FindWindow("TTB_WorkerWindow", "TTB_WorkerWindow"), LocalPInvoke.RegisterWindowMessage("TTB_ForceRefreshTaskbar"), 0, taskbarHwnd);
+            IntPtr workerWindow = LocalPInvoke.FindWindow("TTB_WorkerWindow", "TTB_WorkerWindow");
+            int message = LocalPInvoke.RegisterWindowMessage("TTB_ForceRefreshTaskbar");
+            if (workerWindow == IntPtr.Zero || message == 0)
+            {
+                return IntPtr.Zero;
+            }
+
+            LocalPInvoke.SendMessageTimeout(
+                workerWindow,
+                message,
+                IntPtr.Zero,
+                taskbarHwnd,
+                LocalPInvoke.SMTO_ABORTIFHUNG,
+                100,
+                out IntPtr result);
+            return result;
         }
         
         // Attempt to forcefully refresh the taskbar
