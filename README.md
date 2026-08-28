@@ -135,6 +135,11 @@ The upstream setup video is available at:
 
 [Windows 10 split mode setup video](https://user-images.githubusercontent.com/31840547/134795022-1312d011-40f2-4641-8c8d-3d6c0e752747.mp4)
 
+## 自动构建发布 / Automated Release
+
+向 GitHub 推送以 `v` 开头的标签（例如 `v1.0.0`）会自动触发 Windows 2022 构建，生成自包含的 `win-x64` Release ZIP，并将其发布到对应的 GitHub Release。也可以在 Actions 页面手动运行工作流进行构建验证；手动运行不会创建正式 Release。
+Pushing a tag that starts with `v` (for example, `v1.0.0`) automatically builds the self-contained `win-x64` Release ZIP on Windows 2022 and publishes it to the matching GitHub Release. The workflow can also be run manually from the Actions page for build verification; manual runs do not create a release.
+
 
 ## 许可证 / License
 
@@ -145,4 +150,3 @@ This project and its modifications are distributed under the [GNU GPL v3](LICENS
 
 欢迎通过 Issue 报告问题或提交改进建议。原项目的讨论也可以在其 [Discord server](https://discord.gg/wYQJd8VGSB) 中进行。
 Bug reports and improvement suggestions are welcome through Issues. Upstream discussions are also available in the [Discord server](https://discord.gg/wYQJd8VGSB).
-
