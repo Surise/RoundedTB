@@ -31,6 +31,8 @@ The upstream project is several years old. After the Windows 11 taskbar architec
   **TranslucentTB communication**: uses a timed window message so an unresponsive compatibility process cannot hang RoundedTB.
 - **配置和启动崩溃**：兼容旧版 `rtb.json`，启动时自动迁移缺失字段；修复重复启动检测，并使用临时文件替换降低配置损坏风险。
   **Configuration and startup crashes**: migrates older `rtb.json` files with missing fields, fixes duplicate-launch detection, and writes through a temporary replacement file to reduce corruption risk.
+- **关闭按钮崩溃**：标题栏关闭按钮改为直接隐藏到系统托盘，不在任务栏创建窗口按钮，避免 WPF 在 `Closing` 事件中恢复窗口可见性导致崩溃；Alt+F4 和系统关闭消息也会安全地延迟隐藏。
+  **Close-button crash**: the title-bar close button now hides the settings window in the system tray without creating a taskbar button, instead of re-opening a window during WPF's `Closing` event; Alt+F4 and system close messages are also handled with a deferred hide.
 
 ## 新增功能 / New features
 
@@ -47,7 +49,9 @@ The upstream project is several years old. After the Windows 11 taskbar architec
 ## 使用 / Usage
 
 RoundedTB 常驻系统托盘。启动后配置窗口默认隐藏，不会占用任务栏；右键托盘图标并选择 **Show RoundedTB / 显示 RoundedTB** 打开设置。
+关闭设置窗口只会将其隐藏到系统托盘，不会在任务栏显示窗口按钮，RoundedTB 会继续运行；从托盘菜单选择 **Show RoundedTB / 显示 RoundedTB** 可恢复设置窗口，如需完全退出请选择 **Close RoundedTB / 退出 RoundedTB**。
 RoundedTB runs in the system tray. The configuration window is hidden after startup so it does not occupy the taskbar; right-click the tray icon and choose **Show RoundedTB** to open settings.
+Closing the settings window now hides it in the system tray without adding a taskbar button while RoundedTB keeps running. Choose **Show RoundedTB** in the tray menu to restore it, or **Close RoundedTB** to exit completely.
 
 ### 语言 / Language
 

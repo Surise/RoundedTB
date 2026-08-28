@@ -75,6 +75,8 @@ namespace RoundedTB
             WPFUI.Background.Manager.Apply(WPFUI.Background.BackgroundType.Mica, this);
 
             InitializeComponent();
+            // Keep the settings window resident in the tray when its title-bar close button is used.
+            mainTitleBar.CloseActionOverride = (_, _) => MinimizeSettingsWindow();
 
 
             // Check OS build, as behaviours rather-annoyingly differ between Windows 11 and Windows 10
@@ -701,8 +703,15 @@ namespace RoundedTB
             if (shouldReallyDieNoReally == false)
             {
                 e.Cancel = true;
-                Visibility = Visibility.Hidden;
-                SetShowMenuItemHeader(false);
+                // WPF has entered its closing path at this point, so wait until the
+                // event has returned before changing Visibility or WindowState.
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (!shouldReallyDieNoReally && !closePending)
+                    {
+                        MinimizeSettingsWindow();
+                    }
+                }), DispatcherPriority.Background);
             }
             else
             {
@@ -734,24 +743,38 @@ namespace RoundedTB
             }
         }
 
+        private void MinimizeSettingsWindow()
+        {
+            ShowInTaskbar = false;
+            WindowState = WindowState.Minimized;
+            Visibility = Visibility.Hidden;
+            SetShowMenuItemHeader(false);
+        }
+
         private void CloseMenuItem_Click(object sender, RoutedEventArgs e)
         {
             // Close any popups - leave main window for now
+            shouldReallyDieNoReally = true;
             for (int windowCount = App.Current.Windows.Count - 1; windowCount >= 0; windowCount--)
             {
-                App.Current.Windows[windowCount].Close();
+                Window window = App.Current.Windows[windowCount];
+                if (window != this)
+                {
+                    window.Close();
+                }
             }
-            
-            shouldReallyDieNoReally = true;
 
             Close();
         }
 
         public void ShowMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (IsVisible == false)
+            if (IsVisible == false || WindowState == WindowState.Minimized)
             {
                 Visibility = Visibility.Visible;
+                WindowState = WindowState.Normal;
+                ShowInTaskbar = true;
+                Activate();
                 SetShowMenuItemHeader(true);
             }
             else
@@ -759,7 +782,11 @@ namespace RoundedTB
                 // Close any popups - leave main window for now
                 for (int windowCount = App.Current.Windows.Count - 1; windowCount >= 0; windowCount--)
                 {
-                    App.Current.Windows[windowCount].Close();
+                    Window window = App.Current.Windows[windowCount];
+                    if (window != this)
+                    {
+                        window.Close();
+                    }
                 }
                 Visibility = Visibility.Hidden;
                 SetShowMenuItemHeader(false);
