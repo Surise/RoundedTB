@@ -1,5 +1,3 @@
-![RoundedTB banner](RoundedTB/res/Headbanner.png)
-
 # RoundedTB
 
 ![RoundedTB logo](PackagingProject/Images/Wide310x150Logo.scale-400.png)
@@ -45,13 +43,6 @@ The upstream project is several years old. After the Windows 11 taskbar architec
 - **安全配置保存**：配置写入采用临时文件和替换策略，减少进程中断造成的配置丢失。
   **Safer configuration saves**: writes use a temporary file and replacement strategy to reduce loss when the process is interrupted.
 
-## 获取 / Download
-
-最简单的方式是从 [Microsoft Store](https://www.microsoft.com/store/productId/9MTFTXSJ9M7F) 安装。也可以从本项目的 [Releases](https://github.com/Surise/RoundedTB/releases) 下载压缩包，解压后运行 `RoundedTB.exe`；最新的实验版本可从 [Canary build](https://nightly.link/torchgm/RoundedTB/workflows/ci/master/rtb-artifacts.zip) 获取。
-The easiest option is the [Microsoft Store](https://www.microsoft.com/store/productId/9MTFTXSJ9M7F). You can also download a release archive from this project's [Releases](https://github.com/Surise/RoundedTB/releases), extract it and run `RoundedTB.exe`; experimental builds are available from the [Canary build](https://nightly.link/torchgm/RoundedTB/workflows/ci/master/rtb-artifacts.zip).
-
-本仓库中的图片使用相对路径引用，例如 `RoundedTB/res/Headbanner.png`，因此在离线环境或 GitHub 镜像中也可以正常显示。
-Images in this repository use relative paths such as `RoundedTB/res/Headbanner.png`, so they also render in offline checkouts and GitHub mirrors.
 
 ## 使用 / Usage
 
@@ -144,28 +135,6 @@ The upstream setup video is available at:
 
 [Windows 10 split mode setup video](https://user-images.githubusercontent.com/31840547/134795022-1312d011-40f2-4641-8c8d-3d6c0e752747.mp4)
 
-## 构建和发布 / Build and publish
-
-项目目标框架为 `.NET 6 for Windows`，并使用 Windows UI Automation COM 引用。建议使用 Visual Studio 2022 MSBuild；部分 SDK 版本下 `dotnet build` 无法解析该 COM 引用。
-The project targets `.NET 6 for Windows` and uses a Windows UI Automation COM reference. Visual Studio 2022 MSBuild is recommended because `dotnet build` does not resolve this COM reference on every SDK version.
-
-```powershell
-& "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe" `
-  RoundedTB.sln /t:Publish /p:Configuration=Release /p:Platform="Any CPU" `
-  /p:RuntimeIdentifier=win-x64 /p:SelfContained=true /p:PublishSingleFile=true `
-  /p:EnableCompressionInSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
-```
-
-发布结果为自包含的 Windows x64 程序：
-The publish output is a self-contained Windows x64 application:
-
-- EXE：`publish/RoundedTB-win-x64/RoundedTB.exe`
-  Executable: `publish/RoundedTB-win-x64/RoundedTB.exe`
-- ZIP：`publish/RoundedTB-win-x64.zip`
-  Archive: `publish/RoundedTB-win-x64.zip`
-
-解压 ZIP 后运行 `RoundedTB.exe` 即可。Windows 10 和 Windows 11 均受支持；Windows 11 使用动态模式任务栏界面，Windows 10 使用分栏模式及现有工具栏设置。
-Extract the ZIP and run `RoundedTB.exe`. Windows 10 and Windows 11 are supported; Windows 11 uses the dynamic taskbar surface, while Windows 10 uses split mode and its existing toolbar setup.
 
 ## 许可证 / License
 
